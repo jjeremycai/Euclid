@@ -33,6 +33,9 @@ struct TranscriptionClient {
   /// Checks if a named model is already downloaded on this system.
   var isModelDownloaded: @Sendable (String) async -> Bool = { _ in false }
 
+  /// Loads a previously downloaded model into memory so first transcription is not cold-start bound.
+  var prewarmModel: @Sendable (String) async -> Void = { _ in }
+
   /// Fetches a recommended set of models for the user's hardware from Hugging Face's `argmaxinc/whisperkit-coreml`.
   var getRecommendedModels: @Sendable () async throws -> ModelSupport
 
@@ -48,6 +51,7 @@ extension TranscriptionClient: DependencyKey {
       downloadModel: { try await live.downloadAndLoadModel(variant: $0, progressCallback: $1) },
       deleteModel: { try await live.deleteModel(variant: $0) },
       isModelDownloaded: { await live.isModelDownloaded($0) },
+      prewarmModel: { await live.prewarmModel($0) },
       getRecommendedModels: { await live.getRecommendedModels() },
       getAvailableModels: { try await live.getAvailableModels() }
     )
@@ -216,6 +220,22 @@ actor TranscriptionClientLive {
     }
     #endif
     return names
+  }
+
+  func prewarmModel(_ model: String) async {
+    guard !model.isEmpty else { return }
+    guard await isModelDownloaded(model) else {
+      transcriptionLogger.debug("Skipping model prewarm because \(model) is not downloaded")
+      return
+    }
+
+    do {
+      transcriptionLogger.notice("Prewarming model=\(model)")
+      try await downloadAndLoadModel(variant: model) { _ in }
+      transcriptionLogger.notice("Finished prewarming model=\(model)")
+    } catch {
+      transcriptionLogger.error("Model prewarm failed for \(model): \(error.localizedDescription)")
+    }
   }
 
   /// Transcribes the audio file at `url` using a `model` name.

@@ -59,10 +59,10 @@ struct CuratedRow: View {
 
 				// Trailing size and action/progress icons, aligned to the right
 				HStack(spacing: 12) {
-					Text(model.storageSize)
-						.foregroundStyle(.secondary)
-						.font(.subheadline)
-						.frame(width: 72, alignment: .trailing)
+						Text(model.displayStorageSize)
+							.foregroundStyle(.secondary)
+							.font(.subheadline)
+							.frame(width: 72, alignment: .trailing)
 
 					// Download/Progress/Downloaded at far right
 					ZStack {

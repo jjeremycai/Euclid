@@ -20,42 +20,73 @@ struct PermissionsSectionView: View {
 					status: microphonePermission,
 					action: { store.send(.requestMicrophone) }
 				)
-				
-			// Accessibility + Keyboard
-			permissionCard(
-				title: "Accessibility",
-				icon: "accessibility",
-				status: combinedAccessibilityStatus,
-				action: {
-					store.send(.requestAccessibility)
-					store.send(.requestInputMonitoring)
-				}
-			)
-		}
 
-		if store.hotkeyPermissionState.inputMonitoring != .granted {
-			VStack(alignment: .leading, spacing: 6) {
-				Label {
-					Text("Input Monitoring is required so Euclid can listen for your hotkey.")
-						.font(.callout)
-						.foregroundStyle(.primary)
-				} icon: {
-					Image(systemName: "exclamationmark.triangle.fill")
-						.foregroundStyle(.yellow)
-				}
+				permissionCard(
+					title: "Accessibility",
+					icon: "accessibility",
+					status: accessibilityPermission,
+					action: { store.send(.requestAccessibility) }
+				)
 
-				Button {
-					store.send(.requestInputMonitoring)
-				} label: {
-					Text("Open Input Monitoring Settings")
-				}
-				.buttonStyle(.borderedProminent)
-				.controlSize(.small)
+				permissionCard(
+					title: "Input Monitoring",
+					icon: "keyboard",
+					status: inputMonitoringPermission,
+					action: { store.send(.requestInputMonitoring) }
+				)
 			}
-			.padding(12)
-			.background(Color(nsColor: .controlBackgroundColor))
-			.clipShape(RoundedRectangle(cornerRadius: 10))
-		}
+
+			if accessibilityPermission != .granted {
+				VStack(alignment: .leading, spacing: 8) {
+					Label {
+						Text("Grant Accessibility first. Euclid should appear in the Accessibility list after macOS shows the prompt.")
+							.font(.callout)
+							.foregroundStyle(.primary)
+					} icon: {
+						Image(systemName: "figure.wave")
+							.foregroundStyle(.yellow)
+					}
+
+					Button("Open Accessibility Settings") {
+						store.send(.openAccessibilitySettings)
+					}
+					.buttonStyle(.bordered)
+					.controlSize(.small)
+				}
+				.padding(12)
+				.background(Color(nsColor: .controlBackgroundColor))
+				.clipShape(RoundedRectangle(cornerRadius: 10))
+			}
+
+			if inputMonitoringPermission != .granted {
+				VStack(alignment: .leading, spacing: 8) {
+					Label {
+						Text(inputMonitoringHelpText)
+							.font(.callout)
+							.foregroundStyle(.primary)
+					} icon: {
+						Image(systemName: "exclamationmark.triangle.fill")
+							.foregroundStyle(.yellow)
+					}
+
+					HStack(spacing: 8) {
+						Button("Retry Input Monitoring Prompt") {
+							store.send(.requestInputMonitoring)
+						}
+						.buttonStyle(.borderedProminent)
+						.controlSize(.small)
+
+						Button("Open Input Monitoring Settings") {
+							store.send(.openInputMonitoringSettings)
+						}
+						.buttonStyle(.bordered)
+						.controlSize(.small)
+					}
+				}
+				.padding(12)
+				.background(Color(nsColor: .controlBackgroundColor))
+				.clipShape(RoundedRectangle(cornerRadius: 10))
+			}
 
 		} header: {
 			Text("Permissions")
@@ -104,13 +135,10 @@ struct PermissionsSectionView: View {
 		.clipShape(RoundedRectangle(cornerRadius: 8))
 	}
 
-	private var combinedAccessibilityStatus: PermissionStatus {
-		if accessibilityPermission == .granted && inputMonitoringPermission == .granted {
-			return .granted
+	private var inputMonitoringHelpText: String {
+		if accessibilityPermission != .granted {
+			return "After Accessibility is granted: 1. Click Retry Input Monitoring Prompt. 2. Open Input Monitoring Settings. 3. Enable Euclid there if it appears."
 		}
-		if accessibilityPermission == .denied || inputMonitoringPermission == .denied {
-			return .denied
-		}
-		return .notDetermined
+		return "1. Click Retry Input Monitoring Prompt. 2. Open Input Monitoring Settings. 3. Enable Euclid there if it appears."
 	}
 }

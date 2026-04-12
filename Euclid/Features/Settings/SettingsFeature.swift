@@ -67,13 +67,17 @@ struct SettingsFeature {
     // Existing
     case task
     case startSettingHotKey
+    case completeSettingHotKeyCapture
     case startSettingPasteLastTranscriptHotkey
+    case completeSettingPasteLastTranscriptHotkeyCapture
     case clearPasteLastTranscriptHotkey
     case keyEvent(KeyEvent)
     case toggleOpenOnLogin(Bool)
     case toggleShowDockIcon(Bool)
     case togglePreventSystemSleep(Bool)
     case setRecordingAudioBehavior(RecordingAudioBehavior)
+    case setRecordingIndicatorStyle(RecordingIndicatorStyle)
+    case setRecordingIndicatorPlacement(RecordingIndicatorPlacement)
     case toggleSuperFastMode(Bool)
     case setUseClipboardPaste(Bool)
     case setCopyToClipboard(Bool)
@@ -89,6 +93,8 @@ struct SettingsFeature {
     case requestMicrophone
     case requestAccessibility
     case requestInputMonitoring
+    case openAccessibilitySettings
+    case openInputMonitoringSettings
 
     // Microphone selection
     case loadAvailableInputDevices
@@ -186,6 +192,18 @@ struct SettingsFeature {
     }
   }
 
+  private func finishCaptureEffect(for target: HotKeyCaptureTarget) -> Effect<Action> {
+    .run { send in
+      try? await Task.sleep(for: .milliseconds(100))
+      switch target {
+      case .recording:
+        await send(.completeSettingHotKeyCapture)
+      case .pasteLastTranscript:
+        await send(.completeSettingPasteLastTranscriptHotkeyCapture)
+      }
+    }
+  }
+
   private func handleCapture(_ keyEvent: KeyEvent, for target: HotKeyCaptureTarget, state: inout State) -> Effect<Action> {
     if keyEvent.key == .escape {
       endCapture(target, state: &state)
@@ -201,13 +219,12 @@ struct SettingsFeature {
 
     if let key = keyEvent.key {
       applyCapturedHotKey(key: key, modifiers: updatedModifiers, for: target, state: &state)
-      endCapture(target, state: &state)
-      return .none
+      return finishCaptureEffect(for: target)
     }
 
     if target == .recording, keyEvent.modifiers.isEmpty {
       applyCapturedHotKey(key: nil, modifiers: updatedModifiers, for: target, state: &state)
-      endCapture(target, state: &state)
+      return finishCaptureEffect(for: target)
     }
 
     return .none
@@ -370,7 +387,13 @@ struct SettingsFeature {
         }
 
       case .startSettingHotKey:
+        settingsLogger.info("Starting recording hotkey capture")
         beginCapture(.recording, state: &state)
+        return .none
+
+      case .completeSettingHotKeyCapture:
+        settingsLogger.info("Finished recording hotkey capture")
+        endCapture(.recording, state: &state)
         return .none
 
       case .addWordRemoval:
@@ -416,7 +439,13 @@ struct SettingsFeature {
         return .none
 
       case .startSettingPasteLastTranscriptHotkey:
+        settingsLogger.info("Starting paste-last hotkey capture")
         beginCapture(.pasteLastTranscript, state: &state)
+        return .none
+
+      case .completeSettingPasteLastTranscriptHotkeyCapture:
+        settingsLogger.info("Finished paste-last hotkey capture")
+        endCapture(.pasteLastTranscript, state: &state)
         return .none
         
       case .clearPasteLastTranscriptHotkey:
@@ -465,6 +494,14 @@ struct SettingsFeature {
         state.$euclidSettings.withLock { $0.recordingAudioBehavior = behavior }
         return .none
 
+      case let .setRecordingIndicatorStyle(style):
+        state.$euclidSettings.withLock { $0.recordingIndicatorStyle = style }
+        return .none
+
+      case let .setRecordingIndicatorPlacement(placement):
+        state.$euclidSettings.withLock { $0.recordingIndicatorPlacement = placement }
+        return .none
+
       case let .toggleSuperFastMode(enabled):
         state.$euclidSettings.withLock { $0.superFastModeEnabled = enabled }
         return .run { _ in
@@ -510,21 +547,24 @@ struct SettingsFeature {
 
       // Permission requests
       case .requestMicrophone:
-        settingsLogger.info("User requested microphone permission from settings")
-        return .run { _ in
-          _ = await permissions.requestMicrophone()
-        }
+        return .none
 
       case .requestAccessibility:
-        settingsLogger.info("User requested accessibility permission from settings")
-        return .run { _ in
-          await permissions.requestAccessibility()
-        }
+        return .none
 
       case .requestInputMonitoring:
-        settingsLogger.info("User requested input monitoring permission from settings")
+        return .none
+
+      case .openAccessibilitySettings:
+        settingsLogger.info("User opened accessibility settings from settings")
         return .run { _ in
-          _ = await permissions.requestInputMonitoring()
+          await permissions.openAccessibilitySettings()
+        }
+
+      case .openInputMonitoringSettings:
+        settingsLogger.info("User opened input monitoring settings from settings")
+        return .run { _ in
+          await permissions.openInputMonitoringSettings()
         }
 
       // Model Management

@@ -104,7 +104,7 @@ class KeyEventMonitorClientLive {
   private var hasPromptedForAccessibilityTrust = false
   @Shared(.hotkeyPermissionState) private var hotkeyPermissionState: HotkeyPermissionState
 
-  private let trustCheckIntervalNanoseconds: UInt64 = 100_000_000 // 100ms
+  private let trustCheckIntervalNanoseconds: UInt64 = 1_000_000_000 // 1s
 
   init() {
     logger.info("Initializing HotKeyClient with CGEvent tap.")

@@ -55,6 +55,10 @@ public struct CuratedModelInfo: Equatable, Identifiable, Codable {
 		parakeetModel != nil
 	}
 
+	var displayStorageSize: String {
+		parakeetModel?.storageSizeLabel ?? storageSize
+	}
+
 	public init(
 		displayName: String,
 		internalName: String,

@@ -13,7 +13,9 @@ final class EuclidSettingsMigrationTests: XCTestCase {
 		XCTAssertEqual(decoded.showDockIcon, false)
 		XCTAssertEqual(decoded.selectedModel, "whisper-large-v3")
 		XCTAssertEqual(decoded.useClipboardPaste, false)
-		XCTAssertEqual(decoded.preventSystemSleep, true)
+			XCTAssertEqual(decoded.preventSystemSleep, true)
+			XCTAssertEqual(decoded.recordingIndicatorStyle, .notch)
+		XCTAssertEqual(decoded.recordingIndicatorPlacement, .top)
 		XCTAssertEqual(decoded.minimumKeyTime, 0.25)
 		XCTAssertEqual(decoded.copyToClipboard, true)
 		XCTAssertFalse(decoded.superFastModeEnabled)
@@ -32,6 +34,22 @@ final class EuclidSettingsMigrationTests: XCTestCase {
 		let data = try JSONEncoder().encode(settings)
 		let decoded = try JSONDecoder().decode(EuclidSettings.self, from: data)
 		XCTAssertEqual(decoded, settings)
+	}
+
+	func testLegacyRecordingIndicatorStyleNamesDecodeToCurrentStyles() throws {
+		let legacyPairs: [(String, RecordingIndicatorStyle)] = [
+			("underneathNotch", .notch),
+			("floatingBar", .panel),
+			("circle", .circle),
+		]
+
+		for (legacyRawValue, expectedStyle) in legacyPairs {
+			let payload = #"{"recordingIndicatorStyle":"\#(legacyRawValue)"}"#
+			let data = try XCTUnwrap(payload.data(using: .utf8))
+			let decoded = try JSONDecoder().decode(EuclidSettings.self, from: data)
+
+			XCTAssertEqual(decoded.recordingIndicatorStyle, expectedStyle, "Expected \(legacyRawValue) to decode as \(expectedStyle)")
+		}
 	}
 
 	func testInitNormalizesDoubleTapOnlyWhenLockDisabled() {

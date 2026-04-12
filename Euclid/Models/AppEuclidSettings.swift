@@ -5,6 +5,8 @@ import EuclidCore
 
 // Re-export types so the app target can use them without EuclidCore prefixes.
 typealias RecordingAudioBehavior = EuclidCore.RecordingAudioBehavior
+typealias RecordingIndicatorPlacement = EuclidCore.RecordingIndicatorPlacement
+typealias RecordingIndicatorStyle = EuclidCore.RecordingIndicatorStyle
 typealias EuclidSettings = EuclidCore.EuclidSettings
 
 extension SharedReaderKey

@@ -5,6 +5,7 @@
 //  Created by Kit Langton on 1/24/25.
 //
 
+import AppKit
 import ComposableArchitecture
 import CoreGraphics
 import Foundation
@@ -353,8 +354,6 @@ private extension TranscriptionFeature {
     let model = state.euclidSettings.selectedModel
     let language = state.euclidSettings.outputLanguage
 
-    state.isPrewarming = true
-
     return .run { [sleepManagement] send in
       // Allow system to sleep again
       await sleepManagement.allowSleep()
@@ -569,27 +568,80 @@ struct TranscriptionView: View {
   @Bindable var store: StoreOf<TranscriptionFeature>
   @ObserveInjection var inject
 
+  private var indicatorAlignment: Alignment {
+    switch store.euclidSettings.recordingIndicatorPlacement {
+    case .top:
+      .top
+    case .center:
+      .center
+    case .bottom:
+      .bottom
+    }
+  }
+
+  private var screenInsets: NSEdgeInsets {
+    currentScreen?.safeAreaInsets ?? NSEdgeInsets()
+  }
+
+  private var currentScreen: NSScreen? {
+    NSScreen.screens.first(where: { $0.frame.contains(NSEvent.mouseLocation) }) ?? NSScreen.main ?? NSScreen.screens.first
+  }
+
   var status: TranscriptionIndicatorView.Status {
-    if store.isTranscribing {
+    if store.isPrewarming {
+      return .prewarming
+    } else if store.isTranscribing {
       return .transcribing
     } else if store.isRecording {
       return .recording
-    } else if store.isPrewarming {
-      return .prewarming
     } else {
       return .hidden
     }
   }
 
   var body: some View {
-    TranscriptionIndicatorView(
-      status: status,
-      meter: store.meter
-    )
+    ZStack {
+      indicator
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: indicatorAlignment)
+        .padding(horizontalPadding)
+        .padding(verticalPadding)
+    }
+    .frame(maxWidth: .infinity, maxHeight: .infinity)
     .task {
       await store.send(.task).finish()
     }
     .enableInjection()
+  }
+
+  private var indicator: some View {
+    TranscriptionIndicatorView(
+      status: status,
+      meter: store.meter,
+      style: store.euclidSettings.recordingIndicatorStyle,
+      placement: store.euclidSettings.recordingIndicatorPlacement
+    )
+  }
+
+  private var horizontalPadding: CGFloat {
+    switch store.euclidSettings.recordingIndicatorPlacement {
+    case .top:
+      0
+    case .center:
+      0
+    case .bottom:
+      0
+    }
+  }
+
+  private var verticalPadding: CGFloat {
+    switch store.euclidSettings.recordingIndicatorPlacement {
+    case .top:
+      store.euclidSettings.recordingIndicatorStyle == .notch ? max(screenInsets.top, 4) : screenInsets.top + 10
+    case .center:
+      0
+    case .bottom:
+      screenInsets.bottom + 18
+    }
   }
 }
 

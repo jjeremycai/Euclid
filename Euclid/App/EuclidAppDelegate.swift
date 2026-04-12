@@ -95,8 +95,7 @@ class EuclidAppDelegate: NSObject, NSApplicationDelegate {
 			return
 		}
 		let transcriptionStore = EuclidApp.appStore.scope(state: \.transcription, action: \.transcription)
-		let transcriptionView = TranscriptionView(store: transcriptionStore).padding().padding(.top).padding(.top)
-			.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+		let transcriptionView = TranscriptionView(store: transcriptionStore)
 		invisibleWindow = InvisibleWindow.fromView(transcriptionView)
 		invisibleWindow?.makeKeyAndOrderFront(nil)
 	}

@@ -71,7 +71,7 @@ actor ParakeetClient {
       while p.completedUnitCount < 95 {
         try? await Task.sleep(nanoseconds: 250_000_000)
         if let dir = faDir, let size = directorySize(dir) {
-          let target: Double = 650 * 1024 * 1024 // ~650MB
+          let target = Double(variant.estimatedStorageBytes)
           let frac = max(0.0, min(1.0, Double(size) / target))
           p.completedUnitCount = Int64(5 + frac * 90)
           progress(p)

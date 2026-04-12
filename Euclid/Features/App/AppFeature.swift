@@ -83,6 +83,7 @@ struct AppFeature {
         return .merge(
           startPasteLastTranscriptMonitoring(),
           ensureSelectedModelReadiness(),
+          prewarmSelectedModel(),
           startPermissionMonitoring()
         )
         
@@ -110,6 +111,15 @@ struct AppFeature {
 
       case .transcription:
         return .none
+
+      case .settings(.requestMicrophone):
+        return .send(.requestMicrophone)
+
+      case .settings(.requestAccessibility):
+        return .send(.requestAccessibility)
+
+      case .settings(.requestInputMonitoring):
+        return .send(.requestInputMonitoring)
 
       case .settings:
         return .none
@@ -235,6 +245,15 @@ struct AppFeature {
         }
       }
       await send(.modelStatusEvaluated(isReady))
+    }
+  }
+
+  private func prewarmSelectedModel() -> Effect<Action> {
+    .run { _ in
+      @Shared(.euclidSettings) var euclidSettings: EuclidSettings
+      let selectedModel = euclidSettings.selectedModel
+      guard !selectedModel.isEmpty else { return }
+      await transcription.prewarmModel(selectedModel)
     }
   }
 

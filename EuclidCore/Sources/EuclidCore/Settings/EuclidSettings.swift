@@ -6,6 +6,61 @@ public enum RecordingAudioBehavior: String, Codable, CaseIterable, Equatable, Se
 	case doNothing
 }
 
+public enum RecordingIndicatorStyle: String, Codable, CaseIterable, Equatable, Sendable {
+	case circle
+	case panel
+	case notch
+
+	public init(from decoder: Decoder) throws {
+		let container = try decoder.singleValueContainer()
+		let rawValue = (try? container.decode(String.self)) ?? Self.notch.rawValue
+
+		switch rawValue {
+		case Self.circle.rawValue:
+			self = .circle
+		case Self.panel.rawValue, "floatingBar":
+			self = .panel
+		case Self.notch.rawValue, "underneathNotch":
+			self = .notch
+		default:
+			self = .notch
+		}
+	}
+
+	public func encode(to encoder: Encoder) throws {
+		var container = encoder.singleValueContainer()
+		try container.encode(rawValue)
+	}
+
+	public var displayName: String {
+		switch self {
+		case .circle:
+			"Circle"
+		case .panel:
+			"Panel"
+		case .notch:
+			"Notch"
+		}
+	}
+}
+
+public enum RecordingIndicatorPlacement: String, Codable, CaseIterable, Equatable, Sendable {
+	case top
+	case center
+	case bottom
+
+	public var displayName: String {
+		switch self {
+		case .top:
+			"Top"
+		case .center:
+			"Center"
+		case .bottom:
+			"Bottom"
+		}
+	}
+}
+
 /// User-configurable settings saved to disk.
 public struct EuclidSettings: Codable, Equatable, Sendable {
 	public static let defaultPasteLastTranscriptHotkey = HotKey(key: .v, modifiers: [.option, .shift])
@@ -32,6 +87,8 @@ public struct EuclidSettings: Codable, Equatable, Sendable {
 	public var useClipboardPaste: Bool
 	public var preventSystemSleep: Bool
 	public var recordingAudioBehavior: RecordingAudioBehavior
+	public var recordingIndicatorStyle: RecordingIndicatorStyle
+	public var recordingIndicatorPlacement: RecordingIndicatorPlacement
 	public var minimumKeyTime: Double
 	public var copyToClipboard: Bool
 	public var superFastModeEnabled: Bool
@@ -63,7 +120,9 @@ public struct EuclidSettings: Codable, Equatable, Sendable {
 		selectedModel: String = ParakeetModel.multilingualV3.identifier,
 		useClipboardPaste: Bool = true,
 		preventSystemSleep: Bool = true,
-		recordingAudioBehavior: RecordingAudioBehavior = .doNothing,
+			recordingAudioBehavior: RecordingAudioBehavior = .doNothing,
+			recordingIndicatorStyle: RecordingIndicatorStyle = .notch,
+		recordingIndicatorPlacement: RecordingIndicatorPlacement = .top,
 		minimumKeyTime: Double = EuclidCoreConstants.defaultMinimumKeyTime,
 		copyToClipboard: Bool = false,
 		superFastModeEnabled: Bool = false,
@@ -89,6 +148,8 @@ public struct EuclidSettings: Codable, Equatable, Sendable {
 		self.useClipboardPaste = useClipboardPaste
 		self.preventSystemSleep = preventSystemSleep
 		self.recordingAudioBehavior = recordingAudioBehavior
+		self.recordingIndicatorStyle = recordingIndicatorStyle
+		self.recordingIndicatorPlacement = recordingIndicatorPlacement
 		self.minimumKeyTime = minimumKeyTime
 		self.copyToClipboard = copyToClipboard
 		self.superFastModeEnabled = superFastModeEnabled
@@ -136,6 +197,8 @@ private enum EuclidSettingKey: String, CodingKey, CaseIterable {
 	case useClipboardPaste
 	case preventSystemSleep
 	case recordingAudioBehavior
+	case recordingIndicatorStyle
+	case recordingIndicatorPlacement
 	case pauseMediaOnRecord // Legacy
 	case minimumKeyTime
 	case copyToClipboard
@@ -233,6 +296,16 @@ private enum EuclidSettingsSchema {
 				}
 				return defaultValue
 			}
+		).eraseToAny(),
+		SettingsField(
+			.recordingIndicatorStyle,
+			keyPath: \.recordingIndicatorStyle,
+			default: defaults.recordingIndicatorStyle
+		).eraseToAny(),
+		SettingsField(
+			.recordingIndicatorPlacement,
+			keyPath: \.recordingIndicatorPlacement,
+			default: defaults.recordingIndicatorPlacement
 		).eraseToAny(),
 		SettingsField(.minimumKeyTime, keyPath: \.minimumKeyTime, default: defaults.minimumKeyTime).eraseToAny(),
 		SettingsField(.copyToClipboard, keyPath: \.copyToClipboard, default: defaults.copyToClipboard).eraseToAny(),
