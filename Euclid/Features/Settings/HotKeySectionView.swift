@@ -1,43 +1,64 @@
 import ComposableArchitecture
 import EuclidCore
 import Inject
+import Sauce
 import SwiftUI
 
 struct HotKeySectionView: View {
     @ObserveInjection var inject
     @Bindable var store: StoreOf<SettingsFeature>
 
+    private var recordingHotkeys: [HotKey] {
+        store.euclidSettings.recordingHotkeys
+    }
+
+    private var hasKeyedRecordingHotkey: Bool {
+        recordingHotkeys.contains { $0.key != nil }
+    }
+
+    private var hasModifierOnlyRecordingHotkey: Bool {
+        recordingHotkeys.contains { $0.key == nil }
+    }
+
     var body: some View {
-        Section("Hot Key") {
-            let hotKey = store.euclidSettings.hotkey
-            let key = store.isSettingHotKey ? nil : hotKey.key
-            let modifiers = store.isSettingHotKey ? store.currentModifiers : hotKey.modifiers
-
+        Section("Hot Keys") {
             VStack(spacing: 12) {
-                // Hot key view
-                HStack {
-                    Spacer()
-                    HotKeyView(modifiers: modifiers, key: key, isActive: store.isSettingHotKey)
-                        .animation(.spring(), value: key)
-                        .animation(.spring(), value: modifiers)
-                    Spacer()
-                }
-                .contentShape(Rectangle())
-                .onTapGesture {
-                    store.send(.startSettingHotKey)
-                }
-
-                if !store.isSettingHotKey,
-                   hotKey.key == nil,
-                   !hotKey.modifiers.isEmpty {
-                    ModifierSideControls(
-                        modifiers: hotKey.modifiers,
-                        onSelect: { kind, side in
-                            store.send(.setModifierSide(kind, side))
+                ForEach(Array(recordingHotkeys.enumerated()), id: \.offset) { index, hotKey in
+                    RecordingHotKeyRow(
+                        title: index == 0 ? "Primary" : "Shortcut \(index + 1)",
+                        hotKey: hotKey,
+                        isActive: store.recordingHotKeyCaptureIndex == index,
+                        modifiers: store.recordingHotKeyCaptureIndex == index ? store.currentModifiers : hotKey.modifiers,
+                        key: store.recordingHotKeyCaptureIndex == index ? nil : hotKey.key,
+                        canRemove: index > 0,
+                        onTap: { store.send(.startSettingRecordingHotKey(index)) },
+                        onRemove: { store.send(.removeRecordingHotKey(index)) },
+                        onSelectModifierSide: { kind, side in
+                            store.send(.setModifierSide(index, kind, side))
                         }
                     )
-                    .transition(.opacity)
                 }
+
+                if store.isAddingRecordingHotKey {
+                    RecordingHotKeyRow(
+                        title: "New Shortcut",
+                        hotKey: HotKey(key: nil, modifiers: []),
+                        isActive: true,
+                        modifiers: store.currentModifiers,
+                        key: nil,
+                        canRemove: false,
+                        onTap: {},
+                        onRemove: {},
+                        onSelectModifierSide: { _, _ in }
+                    )
+                }
+
+                Button {
+                    store.send(.addRecordingHotKey)
+                } label: {
+                    Label("Add hotkey", systemImage: "plus.circle")
+                }
+                .disabled(store.isSettingHotKey)
             }
 
             Label {
@@ -52,8 +73,7 @@ struct HotKeySectionView: View {
                 Image(systemName: "hand.tap")
             }
 
-            // Double-tap only mode applies to key+modifier combinations.
-            if hotKey.key != nil {
+            if hasKeyedRecordingHotkey {
                 Label {
                     Toggle(
                         "Use double-tap only",
@@ -62,14 +82,13 @@ struct HotKeySectionView: View {
                             set: { store.send(.setUseDoubleTapOnly($0)) }
                         )
                     )
-                        .disabled(!store.euclidSettings.doubleTapLockEnabled)
+                    .disabled(!store.euclidSettings.doubleTapLockEnabled)
                 } icon: {
                     Image(systemName: "hand.tap.fill")
                 }
             }
 
-            // Minimum key time (for modifier-only shortcuts)
-            if store.euclidSettings.hotkey.key == nil {
+            if hasModifierOnlyRecordingHotkey {
                 Label {
                     Slider(
                         value: Binding(
@@ -84,6 +103,55 @@ struct HotKeySectionView: View {
                 } icon: {
                     Image(systemName: "clock")
                 }
+            }
+        }
+        .enableInjection()
+    }
+}
+
+private struct RecordingHotKeyRow: View {
+    @ObserveInjection var inject
+    let title: String
+    let hotKey: HotKey
+    let isActive: Bool
+    let modifiers: Modifiers
+    let key: Key?
+    let canRemove: Bool
+    let onTap: () -> Void
+    let onRemove: () -> Void
+    let onSelectModifierSide: (Modifier.Kind, Modifier.Side) -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text(title)
+                    .settingsCaption()
+                Spacer()
+                if canRemove {
+                    Button(role: .destructive, action: onRemove) {
+                        Image(systemName: "minus.circle")
+                    }
+                    .buttonStyle(.plain)
+                    .help("Remove hotkey")
+                }
+            }
+
+            HStack {
+                Spacer()
+                HotKeyView(modifiers: modifiers, key: key, isActive: isActive)
+                    .animation(.spring(), value: key)
+                    .animation(.spring(), value: modifiers)
+                Spacer()
+            }
+            .contentShape(Rectangle())
+            .onTapGesture(perform: onTap)
+
+            if !isActive, hotKey.key == nil, !hotKey.modifiers.isEmpty {
+                ModifierSideControls(
+                    modifiers: hotKey.modifiers,
+                    onSelect: onSelectModifierSide
+                )
+                .transition(.opacity)
             }
         }
         .enableInjection()

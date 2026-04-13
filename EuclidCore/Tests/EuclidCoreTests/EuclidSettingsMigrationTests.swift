@@ -19,6 +19,8 @@ final class EuclidSettingsMigrationTests: XCTestCase {
 		XCTAssertEqual(decoded.minimumKeyTime, 0.25)
 		XCTAssertEqual(decoded.copyToClipboard, true)
 		XCTAssertFalse(decoded.superFastModeEnabled)
+		XCTAssertEqual(decoded.additionalRecordingHotkeys, [])
+		XCTAssertEqual(decoded.recordingHotkeys, [decoded.hotkey])
 		XCTAssertEqual(decoded.useDoubleTapOnly, true)
 		XCTAssertEqual(decoded.doubleTapLockEnabled, true)
 		XCTAssertEqual(decoded.outputLanguage, "en")
@@ -80,6 +82,25 @@ final class EuclidSettingsMigrationTests: XCTestCase {
 		XCTAssertFalse(settings.useDoubleTapOnly)
 		XCTAssertFalse(decoded.useDoubleTapOnly)
 		XCTAssertEqual(decoded, settings)
+	}
+
+	func testDecodePreservesAdditionalRecordingHotkeys() throws {
+		let payload = """
+		{
+		  "hotkey": { "key": null, "modifiers": { "modifiers": ["fn"] } },
+		  "additionalRecordingHotkeys": [
+		    { "key": "s", "modifiers": { "modifiers": ["option", "shift"] } },
+		    { "key": "r", "modifiers": { "modifiers": ["command"] } }
+		  ]
+		}
+		"""
+		let data = try XCTUnwrap(payload.data(using: .utf8))
+		let decoded = try JSONDecoder().decode(EuclidSettings.self, from: data)
+
+		XCTAssertEqual(decoded.recordingHotkeys.count, 3)
+		XCTAssertEqual(decoded.recordingHotkeys[0], HotKey(key: nil, modifiers: [.fn]))
+		XCTAssertEqual(decoded.recordingHotkeys[1], HotKey(key: .s, modifiers: [.option, .shift]))
+		XCTAssertEqual(decoded.recordingHotkeys[2], HotKey(key: .r, modifiers: [.command]))
 	}
 
 	private func loadFixture(named name: String) throws -> Data {

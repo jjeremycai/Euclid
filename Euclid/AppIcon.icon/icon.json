@@ -1,8 +1,8 @@
 {
   "fill" : {
     "linear-gradient" : [
-      "srgb:0.47700,0.69000,0.56000,1.00000",
-      "srgb:0.12400,0.21800,0.18500,1.00000"
+      "gray:0.19846,1.00000",
+      "srgb:0.00000,0.00000,0.00000,1.00000"
     ],
     "orientation" : {
       "start" : {
@@ -32,11 +32,11 @@
       ],
       "shadow" : {
         "kind" : "neutral",
-        "opacity" : 0.22
+        "opacity" : 0.5
       },
       "translucency" : {
         "enabled" : true,
-        "value" : 0.32
+        "value" : 0.5
       }
     }
   ],

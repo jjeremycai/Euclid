@@ -81,6 +81,7 @@ public struct EuclidSettings: Codable, Equatable, Sendable {
 	public var soundEffectsEnabled: Bool
 	public var soundEffectsVolume: Double
 	public var hotkey: HotKey
+	public var additionalRecordingHotkeys: [HotKey]
 	public var openOnLogin: Bool
 	public var showDockIcon: Bool
 	public var selectedModel: String
@@ -111,10 +112,68 @@ public struct EuclidSettings: Codable, Equatable, Sendable {
 		}
 	}
 
+	private mutating func normalizeRecordingHotkeys() {
+		var seen: [HotKey] = [hotkey]
+		additionalRecordingHotkeys = additionalRecordingHotkeys.reduce(into: []) { result, hotkey in
+			guard !hotkey.isEmpty else { return }
+			guard !seen.contains(hotkey) else { return }
+			result.append(hotkey)
+			seen.append(hotkey)
+		}
+	}
+
+	public var recordingHotkeys: [HotKey] {
+		[hotkey] + additionalRecordingHotkeys
+	}
+
+	public mutating func setRecordingHotKey(_ hotkey: HotKey, at index: Int) {
+		guard index >= 0 else { return }
+		if index == 0 {
+			self.hotkey = hotkey
+		} else {
+			let additionalIndex = index - 1
+			guard additionalRecordingHotkeys.indices.contains(additionalIndex) else { return }
+			additionalRecordingHotkeys[additionalIndex] = hotkey
+		}
+		normalizeRecordingHotkeys()
+	}
+
+	public mutating func appendRecordingHotKey(_ hotkey: HotKey) {
+		guard !hotkey.isEmpty else { return }
+		additionalRecordingHotkeys.append(hotkey)
+		normalizeRecordingHotkeys()
+	}
+
+	public mutating func removeRecordingHotKey(at index: Int) {
+		guard index > 0 else { return }
+		let additionalIndex = index - 1
+		guard additionalRecordingHotkeys.indices.contains(additionalIndex) else { return }
+		additionalRecordingHotkeys.remove(at: additionalIndex)
+	}
+
+	public mutating func setRecordingHotKeyModifierSide(
+		at index: Int,
+		kind: Modifier.Kind,
+		side: Modifier.Side
+	) {
+		guard index >= 0 else { return }
+		if index == 0 {
+			guard hotkey.key == nil else { return }
+			hotkey.modifiers = hotkey.modifiers.setting(kind: kind, to: side)
+		} else {
+			let additionalIndex = index - 1
+			guard additionalRecordingHotkeys.indices.contains(additionalIndex) else { return }
+			guard additionalRecordingHotkeys[additionalIndex].key == nil else { return }
+			additionalRecordingHotkeys[additionalIndex].modifiers =
+				additionalRecordingHotkeys[additionalIndex].modifiers.setting(kind: kind, to: side)
+		}
+	}
+
 	public init(
 		soundEffectsEnabled: Bool = true,
 		soundEffectsVolume: Double = EuclidSettings.baseSoundEffectsVolume,
 		hotkey: HotKey = .init(key: nil, modifiers: [.option]),
+		additionalRecordingHotkeys: [HotKey] = [],
 		openOnLogin: Bool = false,
 		showDockIcon: Bool = true,
 		selectedModel: String = ParakeetModel.multilingualV3.identifier,
@@ -142,6 +201,7 @@ public struct EuclidSettings: Codable, Equatable, Sendable {
 		self.soundEffectsEnabled = soundEffectsEnabled
 		self.soundEffectsVolume = soundEffectsVolume
 		self.hotkey = hotkey
+		self.additionalRecordingHotkeys = additionalRecordingHotkeys
 		self.openOnLogin = openOnLogin
 		self.showDockIcon = showDockIcon
 		self.selectedModel = selectedModel
@@ -165,6 +225,7 @@ public struct EuclidSettings: Codable, Equatable, Sendable {
 		self.wordRemovalsEnabled = wordRemovalsEnabled
 		self.wordRemovals = wordRemovals
 		self.wordRemappings = wordRemappings
+		normalizeRecordingHotkeys()
 		normalizeDoubleTapSettings()
 	}
 
@@ -191,6 +252,7 @@ private enum EuclidSettingKey: String, CodingKey, CaseIterable {
 	case soundEffectsEnabled
 	case soundEffectsVolume
 	case hotkey
+	case additionalRecordingHotkeys
 	case openOnLogin
 	case showDockIcon
 	case selectedModel
@@ -278,6 +340,11 @@ private enum EuclidSettingsSchema {
 		SettingsField(.soundEffectsEnabled, keyPath: \.soundEffectsEnabled, default: defaults.soundEffectsEnabled).eraseToAny(),
 		SettingsField(.soundEffectsVolume, keyPath: \.soundEffectsVolume, default: defaults.soundEffectsVolume).eraseToAny(),
 		SettingsField(.hotkey, keyPath: \.hotkey, default: defaults.hotkey).eraseToAny(),
+		SettingsField(
+			.additionalRecordingHotkeys,
+			keyPath: \.additionalRecordingHotkeys,
+			default: defaults.additionalRecordingHotkeys
+		).eraseToAny(),
 		SettingsField(.openOnLogin, keyPath: \.openOnLogin, default: defaults.openOnLogin).eraseToAny(),
 		SettingsField(.showDockIcon, keyPath: \.showDockIcon, default: defaults.showDockIcon).eraseToAny(),
 		SettingsField(.selectedModel, keyPath: \.selectedModel, default: defaults.selectedModel).eraseToAny(),

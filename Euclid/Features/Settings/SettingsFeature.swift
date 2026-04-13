@@ -12,8 +12,9 @@ import SwiftUI
 private let settingsLogger = EuclidLog.settings
 private typealias SettingsAudioPropertyListenerBlock = @convention(block) (UInt32, UnsafePointer<AudioObjectPropertyAddress>) -> Void
 
-private enum HotKeyCaptureTarget {
-  case recording
+private enum HotKeyCaptureTarget: Equatable {
+  case recording(index: Int)
+  case addingRecording
   case pasteLastTranscript
 }
 
@@ -49,6 +50,8 @@ struct SettingsFeature {
     var languages: IdentifiedArrayOf<Language> = []
     var currentModifiers: Modifiers = .init(modifiers: [])
     var currentPasteLastModifiers: Modifiers = .init(modifiers: [])
+    var recordingHotKeyCaptureIndex: Int?
+    var isAddingRecordingHotKey: Bool = false
     var remappingScratchpadText: String = ""
     
     // Available microphones
@@ -66,7 +69,9 @@ struct SettingsFeature {
 
     // Existing
     case task
-    case startSettingHotKey
+    case startSettingRecordingHotKey(Int)
+    case addRecordingHotKey
+    case removeRecordingHotKey(Int)
     case completeSettingHotKeyCapture
     case startSettingPasteLastTranscriptHotkey
     case completeSettingPasteLastTranscriptHotkeyCapture
@@ -108,7 +113,7 @@ struct SettingsFeature {
     case setMaxHistoryEntries(Int?)
 
     // Modifier configuration
-    case setModifierSide(Modifier.Kind, Modifier.Side)
+    case setModifierSide(Int, Modifier.Kind, Modifier.Side)
 
     // Word remappings
     case setWordRemovalsEnabled(Bool)
@@ -139,8 +144,15 @@ struct SettingsFeature {
 
   private func beginCapture(_ target: HotKeyCaptureTarget, state: inout State) {
     switch target {
-    case .recording:
+    case let .recording(index):
       state.$isSettingHotKey.withLock { $0 = true }
+      state.recordingHotKeyCaptureIndex = index
+      state.isAddingRecordingHotKey = false
+      state.currentModifiers = .init(modifiers: [])
+    case .addingRecording:
+      state.$isSettingHotKey.withLock { $0 = true }
+      state.recordingHotKeyCaptureIndex = nil
+      state.isAddingRecordingHotKey = true
       state.currentModifiers = .init(modifiers: [])
     case .pasteLastTranscript:
       state.$isSettingPasteLastTranscriptHotkey.withLock { $0 = true }
@@ -150,8 +162,10 @@ struct SettingsFeature {
 
   private func endCapture(_ target: HotKeyCaptureTarget, state: inout State) {
     switch target {
-    case .recording:
+    case .recording, .addingRecording:
       state.$isSettingHotKey.withLock { $0 = false }
+      state.recordingHotKeyCaptureIndex = nil
+      state.isAddingRecordingHotKey = false
       state.currentModifiers = .init(modifiers: [])
     case .pasteLastTranscript:
       state.$isSettingPasteLastTranscriptHotkey.withLock { $0 = false }
@@ -161,7 +175,7 @@ struct SettingsFeature {
 
   private func captureModifiers(for target: HotKeyCaptureTarget, state: State) -> Modifiers {
     switch target {
-    case .recording:
+    case .recording, .addingRecording:
       state.currentModifiers
     case .pasteLastTranscript:
       state.currentPasteLastModifiers
@@ -170,7 +184,7 @@ struct SettingsFeature {
 
   private func updateCaptureModifiers(_ modifiers: Modifiers, for target: HotKeyCaptureTarget, state: inout State) {
     switch target {
-    case .recording:
+    case .recording, .addingRecording:
       state.currentModifiers = modifiers
     case .pasteLastTranscript:
       state.currentPasteLastModifiers = modifiers
@@ -179,10 +193,16 @@ struct SettingsFeature {
 
   private func applyCapturedHotKey(key: Key?, modifiers: Modifiers, for target: HotKeyCaptureTarget, state: inout State) {
     switch target {
-    case .recording:
+    case let .recording(index):
       state.$euclidSettings.withLock {
-        $0.hotkey.key = key
-        $0.hotkey.modifiers = modifiers.erasingSides()
+        $0.setRecordingHotKey(
+          HotKey(key: key, modifiers: modifiers.erasingSides()),
+          at: index
+        )
+      }
+    case .addingRecording:
+      state.$euclidSettings.withLock {
+        $0.appendRecordingHotKey(HotKey(key: key, modifiers: modifiers.erasingSides()))
       }
     case .pasteLastTranscript:
       guard let key else { return }
@@ -196,7 +216,7 @@ struct SettingsFeature {
     .run { send in
       try? await Task.sleep(for: .milliseconds(100))
       switch target {
-      case .recording:
+      case .recording, .addingRecording:
         await send(.completeSettingHotKeyCapture)
       case .pasteLastTranscript:
         await send(.completeSettingPasteLastTranscriptHotkeyCapture)
@@ -222,12 +242,22 @@ struct SettingsFeature {
       return finishCaptureEffect(for: target)
     }
 
-    if target == .recording, keyEvent.modifiers.isEmpty {
+    if target != .pasteLastTranscript, keyEvent.modifiers.isEmpty {
       applyCapturedHotKey(key: nil, modifiers: updatedModifiers, for: target, state: &state)
       return finishCaptureEffect(for: target)
     }
 
     return .none
+  }
+
+  private func recordingCaptureTarget(for state: State) -> HotKeyCaptureTarget? {
+    if let index = state.recordingHotKeyCaptureIndex {
+      return .recording(index: index)
+    }
+    if state.isAddingRecordingHotKey {
+      return .addingRecording
+    }
+    return nil
   }
 
   var body: some ReducerOf<Self> {
@@ -386,14 +416,27 @@ struct SettingsFeature {
           deviceRefreshTask.cancel()
         }
 
-      case .startSettingHotKey:
-        settingsLogger.info("Starting recording hotkey capture")
-        beginCapture(.recording, state: &state)
+      case let .startSettingRecordingHotKey(index):
+        settingsLogger.info("Starting recording hotkey capture for index \(index)")
+        beginCapture(.recording(index: index), state: &state)
+        return .none
+
+      case .addRecordingHotKey:
+        settingsLogger.info("Starting recording hotkey capture for new shortcut")
+        beginCapture(.addingRecording, state: &state)
+        return .none
+
+      case let .removeRecordingHotKey(index):
+        state.$euclidSettings.withLock {
+          $0.removeRecordingHotKey(at: index)
+        }
         return .none
 
       case .completeSettingHotKeyCapture:
         settingsLogger.info("Finished recording hotkey capture")
-        endCapture(.recording, state: &state)
+        if let target = recordingCaptureTarget(for: state) {
+          endCapture(target, state: &state)
+        }
         return .none
 
       case .addWordRemoval:
@@ -458,7 +501,8 @@ struct SettingsFeature {
         }
 
         guard state.isSettingHotKey else { return .none }
-        return handleCapture(keyEvent, for: .recording, state: &state)
+        guard let target = recordingCaptureTarget(for: state) else { return .none }
+        return handleCapture(keyEvent, for: target, state: &state)
 
       case let .toggleOpenOnLogin(enabled):
         state.$euclidSettings.withLock { $0.openOnLogin = enabled }
@@ -613,10 +657,9 @@ struct SettingsFeature {
         state.$euclidSettings.withLock { $0.maxHistoryEntries = maxHistoryEntries }
         return .none
 
-      case let .setModifierSide(kind, side):
-        guard state.euclidSettings.hotkey.key == nil else { return .none }
+      case let .setModifierSide(index, kind, side):
         state.$euclidSettings.withLock {
-          $0.hotkey.modifiers = $0.hotkey.modifiers.setting(kind: kind, to: side)
+          $0.setRecordingHotKeyModifierSide(at: index, kind: kind, side: side)
         }
         return .none
 

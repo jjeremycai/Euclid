@@ -16,6 +16,45 @@ import WhisperKit
 
 private let transcriptionFeatureLogger = EuclidLog.transcription
 
+private final class RecordingHotKeyProcessorBox: @unchecked Sendable {
+  private let lock = NSLock()
+  private var processor: RecordingHotKeyProcessor
+
+  init(processor: RecordingHotKeyProcessor) {
+    self.processor = processor
+  }
+
+  func update(settings: EuclidSettings) {
+    let useDoubleTapOnly = settings.doubleTapLockEnabled && settings.useDoubleTapOnly
+    withLock {
+      processor.updateConfiguration(
+        hotkeys: settings.recordingHotkeys,
+        useDoubleTapOnly: useDoubleTapOnly,
+        doubleTapLockEnabled: settings.doubleTapLockEnabled,
+        minimumKeyTime: settings.minimumKeyTime
+      )
+    }
+  }
+
+  func activeState() -> HotKeyProcessor.State {
+    withLock { processor.activeState }
+  }
+
+  func process(keyEvent: KeyEvent) -> RecordingHotKeyProcessor.Output? {
+    withLock { processor.process(keyEvent: keyEvent) }
+  }
+
+  func processMouseClick() -> RecordingHotKeyProcessor.Output? {
+    withLock { processor.processMouseClick() }
+  }
+
+  private func withLock<T>(_ operation: () -> T) -> T {
+    lock.lock()
+    defer { lock.unlock() }
+    return operation()
+  }
+}
+
 @Reducer
 struct TranscriptionFeature {
   @ObservableState
@@ -25,6 +64,7 @@ struct TranscriptionFeature {
     var isPrewarming: Bool = false
     var error: String?
     var recordingStartTime: Date?
+    var activeRecordingHotKey: HotKey?
     var meter: Meter = .init(averagePower: 0, peakPower: 0)
     var sourceAppBundleID: String?
     var sourceAppName: String?
@@ -39,11 +79,11 @@ struct TranscriptionFeature {
     case audioLevelUpdated(Meter)
 
     // Hotkey actions
-    case hotKeyPressed
+    case hotKeyPressed(HotKey)
     case hotKeyReleased
 
     // Recording flow
-    case startRecording
+    case startRecording(HotKey)
     case stopRecording
 
     // Cancel/discard flow
@@ -97,10 +137,10 @@ struct TranscriptionFeature {
 
       // MARK: - HotKey Flow
 
-      case .hotKeyPressed:
+      case let .hotKeyPressed(hotkey):
         // If we're transcribing, send a cancel first. Otherwise start recording immediately.
         // We'll decide later (on release) whether to keep or discard the recording.
-        return handleHotKeyPressed(isTranscribing: state.isTranscribing)
+        return handleHotKeyPressed(hotkey, isTranscribing: state.isTranscribing)
 
       case .hotKeyReleased:
         // If we're currently recording, then stop. Otherwise, just cancel
@@ -109,8 +149,8 @@ struct TranscriptionFeature {
 
       // MARK: - Recording Flow
 
-      case .startRecording:
-        return handleStartRecording(&state)
+      case let .startRecording(hotkey):
+        return handleStartRecording(&state, hotkey: hotkey)
 
       case .stopRecording:
         return handleStopRecording(&state)
@@ -162,42 +202,44 @@ private extension TranscriptionFeature {
   /// Effect to start monitoring hotkey events through the `keyEventMonitor`.
   func startHotKeyMonitoringEffect() -> Effect<Action> {
     .run { send in
-      var hotKeyProcessor: HotKeyProcessor = .init(hotkey: HotKey(key: nil, modifiers: [.option]))
-      @Shared(.isSettingHotKey) var isSettingHotKey: Bool
-      @Shared(.euclidSettings) var euclidSettings: EuclidSettings
+      let hotKeyProcessor = RecordingHotKeyProcessorBox(
+        processor: RecordingHotKeyProcessor(hotkeys: [HotKey(key: nil, modifiers: [.option])])
+      )
 
       // Handle incoming input events (keyboard and mouse)
       let token = keyEventMonitor.handleInputEvent { inputEvent in
+        @Shared(.isSettingHotKey) var isSettingHotKey: Bool
+        @Shared(.euclidSettings) var euclidSettings: EuclidSettings
+
         // Skip if the user is currently setting a hotkey
         if isSettingHotKey {
           return false
         }
 
-        // Always keep hotKeyProcessor in sync with current user hotkey preference
-        hotKeyProcessor.hotkey = euclidSettings.hotkey
-        let useDoubleTapOnly = euclidSettings.doubleTapLockEnabled && euclidSettings.useDoubleTapOnly
-        hotKeyProcessor.doubleTapLockEnabled = euclidSettings.doubleTapLockEnabled
-        hotKeyProcessor.useDoubleTapOnly = useDoubleTapOnly
-        hotKeyProcessor.minimumKeyTime = euclidSettings.minimumKeyTime
+        let settings = euclidSettings
+        let useDoubleTapOnly = settings.doubleTapLockEnabled && settings.useDoubleTapOnly
+        hotKeyProcessor.update(settings: settings)
 
         switch inputEvent {
         case .keyboard(let keyEvent):
           // If Escape is pressed with no modifiers while idle, let's treat that as `cancel`.
           if keyEvent.key == .escape, keyEvent.modifiers.isEmpty,
-             hotKeyProcessor.state == .idle
+             hotKeyProcessor.activeState() == .idle
           {
             Task { await send(.cancel) }
             return false
           }
 
           // Process the key event
-          switch hotKeyProcessor.process(keyEvent: keyEvent) {
+          let output = hotKeyProcessor.process(keyEvent: keyEvent)
+          switch output?.action {
           case .startRecording:
             // If double-tap lock is triggered, we start recording immediately
-            if hotKeyProcessor.state == .doubleTapLock {
-              Task { await send(.startRecording) }
+            if hotKeyProcessor.activeState() == .doubleTapLock, let hotkey = output?.hotkey {
+              Task { await send(.startRecording(hotkey)) }
             } else {
-              Task { await send(.hotKeyPressed) }
+              guard let hotkey = output?.hotkey else { return false }
+              Task { await send(.hotKeyPressed(hotkey)) }
             }
             // If the hotkey is purely modifiers, return false to keep it from interfering with normal usage
             // But if useDoubleTapOnly is true, always intercept the key
@@ -215,11 +257,12 @@ private extension TranscriptionFeature {
             Task { await send(.discard) }
             return false // Don't intercept - let the key chord reach other apps
 
-          case .none:
+          case nil:
             // If we detect repeated same chord, maybe intercept.
             if let pressedKey = keyEvent.key,
-               pressedKey == hotKeyProcessor.hotkey.key,
-               keyEvent.modifiers == hotKeyProcessor.hotkey.modifiers
+               settings.recordingHotkeys.contains(where: {
+                 $0.key == pressedKey && keyEvent.modifiers == $0.modifiers
+               })
             {
               return true
             }
@@ -228,14 +271,17 @@ private extension TranscriptionFeature {
 
         case .mouseClick:
           // Process mouse click - for modifier-only hotkeys, this may cancel/discard
-          switch hotKeyProcessor.processMouseClick() {
+          switch hotKeyProcessor.processMouseClick()?.action {
           case .cancel:
             Task { await send(.cancel) }
             return false // Don't intercept the click itself
           case .discard:
             Task { await send(.discard) }
             return false // Don't intercept the click itself
-          case .startRecording, .stopRecording, .none:
+          case .stopRecording:
+            Task { await send(.hotKeyReleased) }
+            return false
+          case .startRecording, nil:
             return false
           }
         }
@@ -263,10 +309,10 @@ private extension TranscriptionFeature {
 // MARK: - HotKey Press/Release Handlers
 
 private extension TranscriptionFeature {
-  func handleHotKeyPressed(isTranscribing: Bool) -> Effect<Action> {
+  func handleHotKeyPressed(_ hotkey: HotKey, isTranscribing: Bool) -> Effect<Action> {
     // If already transcribing, cancel first. Otherwise start recording immediately.
     let maybeCancel = isTranscribing ? Effect.send(Action.cancel) : .none
-    let startRecording = Effect.send(Action.startRecording)
+    let startRecording = Effect.send(Action.startRecording(hotkey))
     return .merge(maybeCancel, startRecording)
   }
 
@@ -279,7 +325,7 @@ private extension TranscriptionFeature {
 // MARK: - Recording Handlers
 
 private extension TranscriptionFeature {
-  func handleStartRecording(_ state: inout State) -> Effect<Action> {
+  func handleStartRecording(_ state: inout State, hotkey: HotKey) -> Effect<Action> {
     guard state.modelBootstrapState.isModelReady else {
       return .merge(
         .send(.modelMissing),
@@ -287,6 +333,7 @@ private extension TranscriptionFeature {
       )
     }
     state.isRecording = true
+    state.activeRecordingHotKey = hotkey
     let startTime = now
     state.recordingStartTime = startTime
     
@@ -314,6 +361,8 @@ private extension TranscriptionFeature {
 
   func handleStopRecording(_ state: inout State) -> Effect<Action> {
     state.isRecording = false
+    let activeHotKey = state.activeRecordingHotKey ?? state.euclidSettings.hotkey
+    state.activeRecordingHotKey = nil
     
     let stopTime = now
     let startTime = state.recordingStartTime
@@ -321,7 +370,7 @@ private extension TranscriptionFeature {
 
     let decision = RecordingDecisionEngine.decide(
       .init(
-        hotkey: state.euclidSettings.hotkey,
+        hotkey: activeHotKey,
         minimumKeyTime: state.euclidSettings.minimumKeyTime,
         recordingStartTime: state.recordingStartTime,
         currentTime: stopTime
@@ -331,7 +380,7 @@ private extension TranscriptionFeature {
     let startStamp = startTime?.ISO8601Format() ?? "nil"
     let stopStamp = stopTime.ISO8601Format()
     let minimumKeyTime = state.euclidSettings.minimumKeyTime
-    let hotkeyHasKey = state.euclidSettings.hotkey.key != nil
+    let hotkeyHasKey = activeHotKey.key != nil
     transcriptionFeatureLogger.notice(
       "Recording stopped duration=\(String(format: "%.3f", duration))s start=\(startStamp) stop=\(stopStamp) decision=\(String(describing: decision)) minimumKeyTime=\(String(format: "%.2f", minimumKeyTime)) hotkeyHasKey=\(hotkeyHasKey)"
     )
@@ -530,6 +579,7 @@ private extension TranscriptionFeature {
     state.isTranscribing = false
     state.isRecording = false
     state.isPrewarming = false
+    state.activeRecordingHotKey = nil
 
     return .merge(
       .cancel(id: CancelID.transcription),
@@ -549,6 +599,7 @@ private extension TranscriptionFeature {
   func handleDiscard(_ state: inout State) -> Effect<Action> {
     state.isRecording = false
     state.isPrewarming = false
+    state.activeRecordingHotKey = nil
 
     // Silently discard - no sound effect
     return .run { [sleepManagement] _ in
