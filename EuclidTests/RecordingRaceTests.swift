@@ -1,88 +1,87 @@
 import AppKit
 import ComposableArchitecture
+import EuclidCore
 import Foundation
-import Testing
+import XCTest
 
 @testable import Euclid
 
-@Suite(.serialized)
 @MainActor
-struct RecordingRaceTests {
-  @Test
-  func newRecordingCancelsPendingDiscardCleanup() async throws {
+final class RecordingRaceTests: XCTestCase {
+  func testNewRecordingCancelsPendingDiscardCleanup() async throws {
     let now = Date(timeIntervalSince1970: 1_234)
-    let activeApp = NSWorkspace.shared.frontmostApplication
+    let recordingHotKey = HotKey(key: nil, modifiers: [.option])
     let stopURL = FileManager.default.temporaryDirectory
       .appendingPathComponent("discard-cleanup-\(UUID().uuidString).wav")
     let created = FileManager.default.createFile(
       atPath: stopURL.path,
       contents: Data("test".utf8)
     )
-    #expect(created)
+    XCTAssertTrue(created)
     defer { try? FileManager.default.removeItem(at: stopURL) }
 
     let probe = RecordingProbe(stopURL: stopURL)
-    let store = TestStore(initialState: Self.makeState()) {
+    var recording = RecordingClient()
+    recording.startRecording = {
+      await probe.recordStart()
+    }
+    recording.stopRecording = {
+      await probe.beginStop()
+    }
+    let sleepManagement = SleepManagementClient(
+      preventSleep: { _ in },
+      allowSleep: {}
+    )
+    let soundEffects = SoundEffectsClient(
+      play: { _ in },
+      stop: { _ in },
+      stopAll: {},
+      preloadSounds: {},
+      setEnabled: { _ in }
+    )
+
+    let store = Store(initialState: Self.makeState()) {
       TranscriptionFeature()
     } withDependencies: {
-      $0.date.now = now
-      $0.recording.startRecording = {
-        await probe.recordStart()
-      }
-      $0.recording.stopRecording = {
-        await probe.beginStop()
-      }
-      $0.sleepManagement.preventSleep = { _ in }
-      $0.sleepManagement.allowSleep = {}
-      $0.soundEffects.play = { _ in }
+      $0.date = .constant(now)
+      $0.recording = recording
+      $0.sleepManagement = sleepManagement
+      $0.soundEffects = soundEffects
     }
 
-    await store.send(.startRecording) {
-      $0.isRecording = true
-      $0.recordingStartTime = now
-      $0.sourceAppBundleID = activeApp?.bundleIdentifier
-      $0.sourceAppName = activeApp?.localizedName
-    }
-    await store.send(.discard) {
-      $0.isRecording = false
-      $0.isPrewarming = false
-    }
+    await store.send(.startRecording(recordingHotKey)).finish()
+    let discardTask = store.send(.discard)
 
     await probe.waitForPendingStop()
 
-    await store.send(.startRecording) {
-      $0.isRecording = true
-      $0.recordingStartTime = now
-      $0.sourceAppBundleID = activeApp?.bundleIdentifier
-      $0.sourceAppName = activeApp?.localizedName
-    }
+    await store.send(.startRecording(recordingHotKey)).finish()
 
     await probe.resumePendingStop()
-    await store.finish()
+    await discardTask.finish()
 
     let counts = await probe.counts()
-    #expect(counts.startCalls == 2)
-    #expect(counts.stopCalls == 1)
-    #expect(FileManager.default.fileExists(atPath: stopURL.path))
+    XCTAssertEqual(counts.startCalls, 2)
+    XCTAssertEqual(counts.stopCalls, 1)
+    XCTAssertTrue(FileManager.default.fileExists(atPath: stopURL.path))
+    XCTAssertTrue(store.withState(\.isRecording))
   }
 
-  @Test
-  func stopGuardIgnoresOnlyStaleSessions() {
+  func testStopGuardIgnoresOnlyStaleSessions() {
     let currentSessionID = UUID()
 
-    #expect(
+    XCTAssertFalse(
       RecordingClientLive.shouldIgnoreStopRequest(
         snapshotSessionID: currentSessionID,
         currentSessionID: currentSessionID
-      ) == false
+      )
     )
-    #expect(
+    XCTAssertFalse(
       RecordingClientLive.shouldIgnoreStopRequest(
         snapshotSessionID: nil,
         currentSessionID: currentSessionID
-      ) == false
+      )
     )
-    #expect(
+    XCTAssertTrue(
       RecordingClientLive.shouldIgnoreStopRequest(
         snapshotSessionID: currentSessionID,
         currentSessionID: UUID()
@@ -92,10 +91,10 @@ struct RecordingRaceTests {
 
   private static func makeState() -> TranscriptionFeature.State {
     TranscriptionFeature.State(
-      euclidSettings: Shared(.init()),
-      isRemappingScratchpadFocused: Shared(false),
-      modelBootstrapState: Shared(.init(isModelReady: true)),
-      transcriptionHistory: Shared(.init())
+      euclidSettings: Shared(value: .init()),
+      isRemappingScratchpadFocused: false,
+      modelBootstrapState: Shared(value: .init(isModelReady: true)),
+      transcriptionHistory: Shared(value: .init())
     )
   }
 }

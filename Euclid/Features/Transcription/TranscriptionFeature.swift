@@ -16,45 +16,6 @@ import WhisperKit
 
 private let transcriptionFeatureLogger = EuclidLog.transcription
 
-private final class RecordingHotKeyProcessorBox: @unchecked Sendable {
-  private let lock = NSLock()
-  private var processor: RecordingHotKeyProcessor
-
-  init(processor: RecordingHotKeyProcessor) {
-    self.processor = processor
-  }
-
-  func update(settings: EuclidSettings) {
-    let useDoubleTapOnly = settings.doubleTapLockEnabled && settings.useDoubleTapOnly
-    withLock {
-      processor.updateConfiguration(
-        hotkeys: settings.recordingHotkeys,
-        useDoubleTapOnly: useDoubleTapOnly,
-        doubleTapLockEnabled: settings.doubleTapLockEnabled,
-        minimumKeyTime: settings.minimumKeyTime
-      )
-    }
-  }
-
-  func activeState() -> HotKeyProcessor.State {
-    withLock { processor.activeState }
-  }
-
-  func process(keyEvent: KeyEvent) -> RecordingHotKeyProcessor.Output? {
-    withLock { processor.process(keyEvent: keyEvent) }
-  }
-
-  func processMouseClick() -> RecordingHotKeyProcessor.Output? {
-    withLock { processor.processMouseClick() }
-  }
-
-  private func withLock<T>(_ operation: () -> T) -> T {
-    lock.lock()
-    defer { lock.unlock() }
-    return operation()
-  }
-}
-
 @Reducer
 struct TranscriptionFeature {
   @ObservableState
@@ -107,7 +68,6 @@ struct TranscriptionFeature {
   @Dependency(\.transcription) var transcription
   @Dependency(\.recording) var recording
   @Dependency(\.pasteboard) var pasteboard
-  @Dependency(\.keyEventMonitor) var keyEventMonitor
   @Dependency(\.soundEffects) var soundEffect
   @Dependency(\.sleepManagement) var sleepManagement
   @Dependency(\.date.now) var now
@@ -121,11 +81,9 @@ struct TranscriptionFeature {
       case .task:
         // Starts two concurrent effects:
         // 1) Observing audio meter
-        // 2) Monitoring hot key events
-        // 3) Priming the recorder for instant startup
+        // 2) Priming the recorder for instant startup
         return .merge(
           startMeteringEffect(),
-          startHotKeyMonitoringEffect(),
           warmUpRecorderEffect()
         )
 
@@ -197,106 +155,6 @@ private extension TranscriptionFeature {
       }
     }
     .cancellable(id: CancelID.metering, cancelInFlight: true)
-  }
-
-  /// Effect to start monitoring hotkey events through the `keyEventMonitor`.
-  func startHotKeyMonitoringEffect() -> Effect<Action> {
-    .run { send in
-      let hotKeyProcessor = RecordingHotKeyProcessorBox(
-        processor: RecordingHotKeyProcessor(hotkeys: [HotKey(key: nil, modifiers: [.option])])
-      )
-
-      // Handle incoming input events (keyboard and mouse)
-      let token = keyEventMonitor.handleInputEvent { inputEvent in
-        @Shared(.isSettingHotKey) var isSettingHotKey: Bool
-        @Shared(.euclidSettings) var euclidSettings: EuclidSettings
-
-        // Skip if the user is currently setting a hotkey
-        if isSettingHotKey {
-          return false
-        }
-
-        let settings = euclidSettings
-        let useDoubleTapOnly = settings.doubleTapLockEnabled && settings.useDoubleTapOnly
-        hotKeyProcessor.update(settings: settings)
-
-        switch inputEvent {
-        case .keyboard(let keyEvent):
-          // If Escape is pressed with no modifiers while idle, let's treat that as `cancel`.
-          if keyEvent.key == .escape, keyEvent.modifiers.isEmpty,
-             hotKeyProcessor.activeState() == .idle
-          {
-            Task { await send(.cancel) }
-            return false
-          }
-
-          // Process the key event
-          let output = hotKeyProcessor.process(keyEvent: keyEvent)
-          switch output?.action {
-          case .startRecording:
-            // If double-tap lock is triggered, we start recording immediately
-            if hotKeyProcessor.activeState() == .doubleTapLock, let hotkey = output?.hotkey {
-              Task { await send(.startRecording(hotkey)) }
-            } else {
-              guard let hotkey = output?.hotkey else { return false }
-              Task { await send(.hotKeyPressed(hotkey)) }
-            }
-            // If the hotkey is purely modifiers, return false to keep it from interfering with normal usage
-            // But if useDoubleTapOnly is true, always intercept the key
-            return useDoubleTapOnly || keyEvent.key != nil
-
-          case .stopRecording:
-            Task { await send(.hotKeyReleased) }
-            return false // or `true` if you want to intercept
-
-          case .cancel:
-            Task { await send(.cancel) }
-            return true
-
-          case .discard:
-            Task { await send(.discard) }
-            return false // Don't intercept - let the key chord reach other apps
-
-          case nil:
-            // If we detect repeated same chord, maybe intercept.
-            if let pressedKey = keyEvent.key,
-               settings.recordingHotkeys.contains(where: {
-                 $0.key == pressedKey && keyEvent.modifiers == $0.modifiers
-               })
-            {
-              return true
-            }
-            return false
-          }
-
-        case .mouseClick:
-          // Process mouse click - for modifier-only hotkeys, this may cancel/discard
-          switch hotKeyProcessor.processMouseClick()?.action {
-          case .cancel:
-            Task { await send(.cancel) }
-            return false // Don't intercept the click itself
-          case .discard:
-            Task { await send(.discard) }
-            return false // Don't intercept the click itself
-          case .stopRecording:
-            Task { await send(.hotKeyReleased) }
-            return false
-          case .startRecording, nil:
-            return false
-          }
-        }
-      }
-
-      defer { token.cancel() }
-
-      await withTaskCancellationHandler {
-        while !Task.isCancelled {
-          try? await Task.sleep(for: .seconds(60))
-        }
-      } onCancel: {
-        token.cancel()
-      }
-    }
   }
 
   func warmUpRecorderEffect() -> Effect<Action> {

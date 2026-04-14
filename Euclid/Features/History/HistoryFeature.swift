@@ -1,4 +1,3 @@
-import AVFoundation
 import AppKit
 import ComposableArchitecture
 import Dependencies
@@ -55,32 +54,6 @@ extension URL {
 	}
 }
 
-class AudioPlayerController: NSObject, AVAudioPlayerDelegate {
-	private var player: AVAudioPlayer?
-	var onPlaybackFinished: (() -> Void)?
-
-	func play(url: URL) throws -> AVAudioPlayer {
-		let player = try AVAudioPlayer(contentsOf: url)
-		player.delegate = self
-		player.play()
-		self.player = player
-		return player
-	}
-
-	func stop() {
-		player?.stop()
-		player = nil
-	}
-
-	// AVAudioPlayerDelegate method
-	func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
-		self.player = nil
-		Task { @MainActor in
-			onPlaybackFinished?()
-		}
-	}
-}
-
 // MARK: - History Feature
 
 @Reducer
@@ -89,13 +62,8 @@ struct HistoryFeature {
 	struct State: Equatable {
 		@Shared(.transcriptionHistory) var transcriptionHistory: TranscriptionHistory
 		var playingTranscriptID: UUID?
-		var audioPlayer: AVAudioPlayer?
-		var audioPlayerController: AudioPlayerController?
 
-		mutating func stopAudioPlayback() {
-			audioPlayerController?.stop()
-			audioPlayer = nil
-			audioPlayerController = nil
+		mutating func clearPlaybackState() {
 			playingTranscriptID = nil
 		}
 	}
@@ -107,12 +75,18 @@ struct HistoryFeature {
 		case deleteTranscript(UUID)
 		case deleteAllTranscripts
 		case confirmDeleteAll
-		case playbackFinished
+		case playbackFinished(UUID)
+		case playbackFailed(UUID)
 		case navigateToSettings
 	}
 
 	@Dependency(\.pasteboard) var pasteboard
+	@Dependency(\.audioPlayback) var audioPlayback
 	@Dependency(\.transcriptPersistence) var transcriptPersistence
+
+		private enum PlaybackCancellationID: Hashable, Sendable {
+			case playback
+		}
 
 	private func deleteAudioEffect(for transcripts: [Transcript]) -> Effect<Action> {
 		.run { [transcriptPersistence] _ in
@@ -122,52 +96,84 @@ struct HistoryFeature {
 		}
 	}
 
+	private func stopPlaybackEffect() -> Effect<Action> {
+		.run { [audioPlayback] _ in
+			await audioPlayback.stop()
+		}
+	}
+
+	private func startPlaybackEffect(for transcript: Transcript, id: UUID) -> Effect<Action> {
+		.run { [audioPlayback] send in
+			await withTaskCancellationHandler {
+				do {
+					let playbackCompletion = try await audioPlayback.play(url: transcript.audioPath)
+					guard !Task.isCancelled else { return }
+
+					for await _ in playbackCompletion {}
+
+					guard !Task.isCancelled else { return }
+					await send(.playbackFinished(id))
+				} catch {
+					guard !Task.isCancelled else { return }
+					historyLogger.error(
+						"Failed to play audio for transcript \(id.uuidString, privacy: .private): \(error.localizedDescription, privacy: .private)"
+					)
+					await send(.playbackFailed(id))
+				}
+			} onCancel: {
+				Task {
+					await audioPlayback.stop()
+				}
+			}
+		}
+			.cancellable(id: PlaybackCancellationID.playback, cancelInFlight: true)
+	}
+
 	var body: some ReducerOf<Self> {
 		Reduce { state, action in
 			switch action {
 			case let .playTranscript(id):
 				if state.playingTranscriptID == id {
-					// Stop playback if tapping the same transcript
-					state.stopAudioPlayback()
-					return .none
-				}
+						// Stop playback if tapping the same transcript
+						state.clearPlaybackState()
+						return .concatenate(
+							.cancel(id: PlaybackCancellationID.playback),
+							stopPlaybackEffect()
+						)
+					}
 
 				// Stop any existing playback
-				state.stopAudioPlayback()
+				let wasPlaying = state.playingTranscriptID != nil
+				state.clearPlaybackState()
 
 				// Find the transcript and play its audio
 				guard let transcript = state.transcriptionHistory.history.first(where: { $0.id == id }) else {
-					return .none
+					return wasPlaying
+						? .concatenate(
+							.cancel(id: PlaybackCancellationID.playback),
+							stopPlaybackEffect()
+						)
+						: .none
 				}
 
-				do {
-					let controller = AudioPlayerController()
-					let player = try controller.play(url: transcript.audioPath)
+				state.playingTranscriptID = id
+				return startPlaybackEffect(for: transcript, id: id)
 
-					state.audioPlayer = player
-					state.audioPlayerController = controller
-					state.playingTranscriptID = id
+			case .stopPlayback:
+				state.clearPlaybackState()
+				return .concatenate(
+								.cancel(id: PlaybackCancellationID.playback),
+					stopPlaybackEffect()
+				)
 
-					return .run { send in
-						// Using non-throwing continuation since we don't need to throw errors
-						await withCheckedContinuation { continuation in
-							controller.onPlaybackFinished = {
-								continuation.resume()
+			case let .playbackFinished(id):
+				guard state.playingTranscriptID == id else { return .none }
+				state.clearPlaybackState()
+				return .none
 
-								// Use Task to switch to MainActor for sending the action
-								Task { @MainActor in
-									send(.playbackFinished)
-								}
-							}
-						}
-					}
-				} catch {
-					historyLogger.error("Failed to play audio: \(error.localizedDescription)")
-					return .none
-				}
-
-			case .stopPlayback, .playbackFinished:
-				state.stopAudioPlayback()
+			case let .playbackFailed(id):
+				guard state.playingTranscriptID == id else { return .none }
+				state.clearPlaybackState()
 				return .none
 
 			case let .copyToClipboard(text):
@@ -181,13 +187,17 @@ struct HistoryFeature {
 				}
 
 				let transcript = state.transcriptionHistory.history[index]
-
-				if state.playingTranscriptID == id {
-					state.stopAudioPlayback()
+				state.$transcriptionHistory.withLock { history in
+					_ = history.history.remove(at: index)
 				}
 
-				_ = state.$transcriptionHistory.withLock { history in
-					history.history.remove(at: index)
+				if state.playingTranscriptID == id {
+					state.clearPlaybackState()
+					return .concatenate(
+						.cancel(id: PlaybackCancellationID.playback),
+						stopPlaybackEffect(),
+						deleteAudioEffect(for: [transcript])
+					)
 				}
 
 				return deleteAudioEffect(for: [transcript])
@@ -197,10 +207,19 @@ struct HistoryFeature {
 
 			case .confirmDeleteAll:
 				let transcripts = state.transcriptionHistory.history
-				state.stopAudioPlayback()
+				let shouldStopPlayback = state.playingTranscriptID != nil
+				state.clearPlaybackState()
 
 				state.$transcriptionHistory.withLock { history in
 					history.history.removeAll()
+				}
+
+				if shouldStopPlayback {
+					return .concatenate(
+							.cancel(id: PlaybackCancellationID.playback),
+						stopPlaybackEffect(),
+						deleteAudioEffect(for: transcripts)
+					)
 				}
 
 				return deleteAudioEffect(for: transcripts)

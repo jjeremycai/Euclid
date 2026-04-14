@@ -1,17 +1,16 @@
 import AVFoundation
 import ComposableArchitecture
 import EuclidCore
-import SwiftUI
+import AppKit
 
 private let appLogger = EuclidLog.app
 private let cacheLogger = EuclidLog.caches
 
+@MainActor
 class EuclidAppDelegate: NSObject, NSApplicationDelegate {
-	var invisibleWindow: InvisibleWindow?
-	var settingsWindow: NSWindow?
 	var statusItem: NSStatusItem!
 	private var launchedAtLogin = false
-	private let setupPanel = SetupPanel()
+	private let windowCoordinator = EuclidWindowCoordinator()
 
 	@Dependency(\.soundEffects) var soundEffect
 	@Dependency(\.recording) var recording
@@ -50,15 +49,7 @@ class EuclidAppDelegate: NSObject, NSApplicationDelegate {
 		startLifecycleTasksIfNeeded()
 
 		// Then present main views
-		presentMainView()
-
-		// Listen for setup completion to transition to settings
-		NotificationCenter.default.addObserver(
-			self,
-			selector: #selector(handleSetupCompleted),
-			name: .setupPanelCompleted,
-			object: nil
-		)
+		windowCoordinator.presentMainView(store: EuclidApp.appStore)
 
 		guard shouldOpenForegroundUIOnLaunch else {
 			appLogger.notice("Suppressing foreground windows for login launch")
@@ -67,7 +58,9 @@ class EuclidAppDelegate: NSObject, NSApplicationDelegate {
 
 		if needsPermissionSetup() {
 			appLogger.notice("Permissions incomplete — showing setup panel")
-			setupPanel.show(store: EuclidApp.appStore)
+			windowCoordinator.presentSetupPanel(store: EuclidApp.appStore) { [weak self] in
+				self?.presentSettingsView()
+			}
 		} else {
 			presentSettingsView()
 		}
@@ -95,54 +88,28 @@ class EuclidAppDelegate: NSObject, NSApplicationDelegate {
 
 	/// Sets XDG_CACHE_HOME so FluidAudio stores models under our app's
 	/// Application Support folder, keeping everything in one place.
-    private func configureLocalCaches() {
-        do {
-            let cache = try URL.euclidApplicationSupport.appendingPathComponent("cache", isDirectory: true)
-            try FileManager.default.createDirectory(at: cache, withIntermediateDirectories: true)
-            setenv("XDG_CACHE_HOME", cache.path, 1)
-            cacheLogger.info("XDG_CACHE_HOME set to \(cache.path)")
-        } catch {
-            cacheLogger.error("Failed to configure local caches: \(error.localizedDescription)")
-        }
-    }
+	private func configureLocalCaches() {
+		do {
+			let cache = try URL.euclidApplicationSupport.appendingPathComponent("cache", isDirectory: true)
+			try FileManager.default.createDirectory(at: cache, withIntermediateDirectories: true)
+			setenv("XDG_CACHE_HOME", cache.path, 1)
+			cacheLogger.info("XDG_CACHE_HOME set to \(cache.path)")
+		} catch {
+			cacheLogger.error("Failed to configure local caches: \(error.localizedDescription)")
+		}
+	}
 
 	func presentMainView() {
-		guard invisibleWindow == nil else {
-			return
-		}
-		let transcriptionStore = EuclidApp.appStore.scope(state: \.transcription, action: \.transcription)
-		let transcriptionView = TranscriptionView(store: transcriptionStore)
-		invisibleWindow = InvisibleWindow.fromView(transcriptionView)
-		invisibleWindow?.makeKeyAndOrderFront(nil)
+		windowCoordinator.presentMainView(store: EuclidApp.appStore)
 	}
 
 	func presentSettingsView() {
-		if let settingsWindow = settingsWindow {
-			settingsWindow.makeKeyAndOrderFront(nil)
-			NSApp.activate(ignoringOtherApps: true)
-			return
-		}
-
-		let settingsView = AppView(store: EuclidApp.appStore)
-		let settingsWindow = NSWindow(
-			contentRect: .init(x: 0, y: 0, width: 700, height: 700),
-			styleMask: [.titled, .fullSizeContentView, .closable, .miniaturizable],
-			backing: .buffered,
-			defer: false
-		)
-		settingsWindow.titleVisibility = .visible
-		settingsWindow.contentView = NSHostingView(rootView: settingsView)
-		settingsWindow.isReleasedWhenClosed = false
-		settingsWindow.center()
-		settingsWindow.toolbarStyle = NSWindow.ToolbarStyle.unified
-		settingsWindow.makeKeyAndOrderFront(nil)
-		NSApp.activate(ignoringOtherApps: true)
-		self.settingsWindow = settingsWindow
+		windowCoordinator.presentSettingsView(store: EuclidApp.appStore)
 	}
 
 	@objc private func handleAppModeUpdate() {
 		Task {
-			await updateAppMode()
+			updateAppMode()
 		}
 	}
 
@@ -156,13 +123,6 @@ class EuclidAppDelegate: NSObject, NSApplicationDelegate {
 		}
 	}
 
-	@objc private func handleSetupCompleted() {
-		appLogger.notice("Setup completed — transitioning to settings")
-		setupPanel.dismiss()
-		presentSettingsView()
-		NSApp.activate(ignoringOtherApps: true)
-	}
-
 	/// Synchronous check of whether any required permission is missing.
 	private func needsPermissionSetup() -> Bool {
 		let micGranted = AVCaptureDevice.authorizationStatus(for: .audio) == .authorized
@@ -172,8 +132,10 @@ class EuclidAppDelegate: NSObject, NSApplicationDelegate {
 	}
 
 	func applicationShouldHandleReopen(_: NSApplication, hasVisibleWindows _: Bool) -> Bool {
-		if needsPermissionSetup() && !setupPanel.isVisible {
-			setupPanel.show(store: EuclidApp.appStore)
+		if needsPermissionSetup() && !windowCoordinator.isSetupVisible {
+			windowCoordinator.presentSetupPanel(store: EuclidApp.appStore) { [weak self] in
+				self?.presentSettingsView()
+			}
 		} else {
 			presentSettingsView()
 		}

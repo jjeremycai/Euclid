@@ -4,6 +4,17 @@ import EuclidCore
 #if canImport(FluidAudio)
 import FluidAudio
 
+private extension ParakeetModel {
+  var asrVersion: AsrModelVersion {
+    switch self {
+    case .englishV2:
+      .v2
+    case .multilingualV3:
+      .v3
+    }
+  }
+}
+
 actor ParakeetClient {
   private var asr: AsrManager?
   private var models: AsrModels?
@@ -167,15 +178,6 @@ actor ParakeetClient {
     let appCache = try? URL.euclidApplicationSupport.appendingPathComponent("cache", isDirectory: true)
     let userCache = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".cache", isDirectory: true)
     return [xdg, appCache, appSupport, userCache].compactMap { $0 }
-  }
-}
-
-private extension ParakeetModel {
-  var asrVersion: AsrModelVersion {
-    switch self {
-    case .englishV2: return .v2
-    case .multilingualV3: return .v3
-    }
   }
 }
 

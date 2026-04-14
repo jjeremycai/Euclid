@@ -11,7 +11,7 @@ final class SetupPanel {
         panel?.isVisible ?? false
     }
 
-    func show(store: StoreOf<AppFeature>) {
+    func show(store: StoreOf<AppFeature>, onSetupComplete: @escaping () -> Void = {}) {
         if let existing = panel {
             existing.makeKeyAndOrderFront(nil)
             NSApp.activate(ignoringOtherApps: true)
@@ -25,8 +25,7 @@ final class SetupPanel {
             },
             onSetupComplete: { [weak self] in
                 self?.dismiss()
-                // Post notification so AppDelegate can open settings
-                NotificationCenter.default.post(name: .setupPanelCompleted, object: nil)
+                onSetupComplete()
             }
         )
         .padding(4)
@@ -70,8 +69,4 @@ final class SetupPanel {
         panel?.orderOut(nil)
         panel = nil
     }
-}
-
-extension Notification.Name {
-    static let setupPanelCompleted = Notification.Name("setupPanelCompleted")
 }

@@ -18,44 +18,53 @@ struct SetupPanelView: View {
             // MARK: - Header
             HStack(spacing: 8) {
                 Circle()
-                    .fill(allGranted ? .green : .orange)
+                    .fill(statusDotColor)
                     .frame(width: 8, height: 8)
+                    .shadow(color: statusDotColor.opacity(0.6), radius: 4)
 
                 Text("Euclid")
-                    .font(.headline)
-                    .fontWeight(.semibold)
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(panelTextPrimary)
 
                 Spacer()
 
-                Text("Setup")
-                    .font(.caption)
-                    .fontWeight(.medium)
-                    .foregroundStyle(.secondary)
+                Text(statusText)
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(panelTextTertiary)
 
                 Button {
                     onDismiss()
                 } label: {
                     Image(systemName: "xmark")
-                        .font(.caption2.weight(.bold))
-                        .foregroundStyle(.secondary)
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(panelTextTertiary)
+                        .frame(width: 20, height: 20)
+                        .background(
+                            Circle()
+                                .fill(Color.white.opacity(0.08))
+                        )
                 }
                 .buttonStyle(.plain)
             }
             .padding(.horizontal, 16)
-            .padding(.top, 16)
-            .padding(.bottom, 12)
+            .padding(.vertical, 14)
+
+            Divider()
+                .overlay(panelBorder)
+                .padding(.horizontal, 16)
 
             // MARK: - Intro
             introSection
+            .padding(.top, 16)
             .padding(.horizontal, 16)
             .padding(.bottom, 16)
 
             // MARK: - Permissions
             VStack(alignment: .leading, spacing: 0) {
                 Text("PERMISSIONS")
-                    .font(.caption)
+                    .font(.system(size: 10, weight: .semibold, design: .rounded))
                     .fontWeight(.medium)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(panelTextTertiary)
                     .padding(.horizontal, 16)
                     .padding(.bottom, 8)
 
@@ -66,7 +75,8 @@ struct SetupPanelView: View {
                         title: "Microphone",
                         subtitle: microphoneSubtitle,
                         status: store.microphonePermission,
-                        primaryAction: microphonePrimaryAction
+                        primaryAction: microphonePrimaryAction,
+                        theme: .clickyPanel
                     )
 
                     PermissionChecklistRow(
@@ -76,7 +86,8 @@ struct SetupPanelView: View {
                         subtitle: accessibilitySubtitle,
                         status: store.accessibilityPermission,
                         primaryAction: accessibilityPrimaryAction,
-                        secondaryAction: openAccessibilitySettingsAction
+                        secondaryAction: openAccessibilitySettingsAction,
+                        theme: .clickyPanel
                     )
 
                     PermissionChecklistRow(
@@ -86,7 +97,8 @@ struct SetupPanelView: View {
                         subtitle: inputMonitoringSubtitle,
                         status: store.inputMonitoringPermission,
                         primaryAction: inputMonitoringPrimaryAction,
-                        secondaryAction: openInputMonitoringSettingsAction
+                        secondaryAction: openInputMonitoringSettingsAction,
+                        theme: .clickyPanel
                     )
                 }
                 .padding(.horizontal, 16)
@@ -95,6 +107,7 @@ struct SetupPanelView: View {
 
             // MARK: - Quit
             Divider()
+                .overlay(panelBorder)
                 .padding(.horizontal, 16)
 
             Button {
@@ -102,24 +115,25 @@ struct SetupPanelView: View {
             } label: {
                 HStack(spacing: 8) {
                     Circle()
-                        .fill(.white.opacity(0.3))
+                        .fill(panelTextTertiary)
                         .frame(width: 6, height: 6)
                     Text("Quit Euclid")
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(panelTextSecondary)
                 }
                 .padding(.horizontal, 16)
-                .padding(.vertical, 10)
+                .padding(.vertical, 12)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
         }
-        .frame(width: 340)
+        .frame(width: 320)
         .background(
             RoundedRectangle(cornerRadius: 12)
-                .fill(Color(nsColor: .windowBackgroundColor))
-                .shadow(color: .black.opacity(0.3), radius: 20, y: 8)
+                .fill(panelBackground)
+                .shadow(color: .black.opacity(0.5), radius: 20, y: 10)
+                .shadow(color: .black.opacity(0.3), radius: 4, y: 2)
         )
         .clipShape(RoundedRectangle(cornerRadius: 12))
         .onChange(of: allGranted) { _, granted in
@@ -132,19 +146,21 @@ struct SetupPanelView: View {
     @ViewBuilder
     private var introSection: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text(allGranted ? "You're all set." : "Grant the three permissions below.")
-                .font(.body.weight(.semibold))
+            Text(allGranted ? "You're all set." : "Hi! This is Euclid.")
+                .font(.system(size: 12, weight: .bold))
+                .foregroundStyle(panelTextSecondary)
 
             Text("Euclid lives in your menu bar. Hold the hotkey, speak, and your transcript appears where you're typing.")
-                .font(.callout)
-                .foregroundStyle(.secondary)
+                .font(.system(size: 11))
+                .foregroundStyle(panelTextTertiary)
                 .fixedSize(horizontal: false, vertical: true)
 
             Text("Euclid only listens while you're recording. Nothing runs in the background.")
-                .font(.callout)
-                .foregroundStyle(.green)
+                .font(.system(size: 11))
+                .foregroundStyle(panelSuccess)
                 .fixedSize(horizontal: false, vertical: true)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private var microphoneSubtitle: String? {
@@ -219,5 +235,41 @@ struct SetupPanelView: View {
             title: "Open Settings",
             action: { store.send(.settings(.openInputMonitoringSettings)) }
         )
+    }
+
+    private var panelBackground: Color {
+        Color(red: 0.063, green: 0.071, blue: 0.067)
+    }
+
+    private var panelBorder: Color {
+        Color(red: 0.216, green: 0.231, blue: 0.224)
+    }
+
+    private var panelTextPrimary: Color {
+        Color(red: 0.925, green: 0.933, blue: 0.929)
+    }
+
+    private var panelTextSecondary: Color {
+        Color(red: 0.678, green: 0.710, blue: 0.698)
+    }
+
+    private var panelTextTertiary: Color {
+        Color(red: 0.420, green: 0.451, blue: 0.435)
+    }
+
+    private var panelSuccess: Color {
+        Color(red: 0.204, green: 0.827, blue: 0.600)
+    }
+
+    private var panelAccent: Color {
+        Color(red: 0.149, green: 0.388, blue: 0.922)
+    }
+
+    private var statusDotColor: Color {
+        allGranted ? panelSuccess : panelAccent
+    }
+
+    private var statusText: String {
+        allGranted ? "Ready" : "Setup"
     }
 }

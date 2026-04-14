@@ -130,7 +130,6 @@ struct SettingsFeature {
     case setRemappingScratchpadFocused(Bool)
   }
 
-  @Dependency(\.keyEventMonitor) var keyEventMonitor
   @Dependency(\.continuousClock) var clock
   @Dependency(\.transcription) var transcription
   @Dependency(\.recording) var recording
@@ -312,14 +311,14 @@ struct SettingsFeature {
 
           // Set up periodic refresh of available devices (every 120 seconds)
           // Using a longer interval to reduce resource usage
-          let deviceRefreshTask = Task { @MainActor in
-            for await _ in clock.timer(interval: .seconds(120)) {
-              // Only refresh when the app is active to save resources
-              if NSApplication.shared.isActive {
-                await send(.loadAvailableInputDevices)
-              }
-            }
-          }
+	          let deviceRefreshTask = Task { @MainActor in
+	            for await _ in clock.timer(interval: .seconds(120)) {
+	              // Only refresh when the app is active to save resources
+	              if NSApplication.shared.isActive {
+	                send(.loadAvailableInputDevices)
+	              }
+	            }
+	          }
 
           // Listen for device connection/disconnection notifications
           // Using a simpler debounced approach with a single task
@@ -413,11 +412,13 @@ struct SettingsFeature {
             }
           }
 
-          for try await keyEvent in await keyEventMonitor.listenForKeyPress() {
-            await send(.keyEvent(keyEvent))
+          await withTaskCancellationHandler {
+            while !Task.isCancelled {
+              try? await Task.sleep(for: .seconds(60))
+            }
+          } onCancel: {
+            deviceRefreshTask.cancel()
           }
-          
-          deviceRefreshTask.cancel()
         }
 
       case let .startSettingRecordingHotKey(index):

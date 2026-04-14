@@ -132,7 +132,6 @@ class KeyEventMonitorClientLive {
     queue.sync {
       wantsMonitoring
         && accessibilityTrusted
-        && inputMonitoringTrusted
         && !(continuations.isEmpty && inputContinuations.isEmpty)
     }
   }
@@ -300,7 +299,7 @@ class KeyEventMonitorClientLive {
         logger.error("Accessibility permission missing (\(reason)); suspending tap.")
       }
       if !input {
-        logger.error("Input Monitoring permission missing (\(reason)); waiting for approval before restarting hotkeys.")
+        logger.error("Input Monitoring permission missing (\(reason)); keeping tap armed so macOS can register approval, but key events will remain ignored until access is granted.")
       }
     }
     await refreshMonitoringState(reason: "trust_\(reason)")
@@ -451,6 +450,7 @@ class KeyEventMonitorClientLive {
     logger.error("Event tap disabled by \(reason); scheduling restart.")
     Task { [weak self] in
       guard let self else { return }
+      await self.deactivateTapOnMain(reason: "tap_disabled_\(reason)")
       await self.refreshMonitoringState(reason: "tap_disabled_\(reason)")
     }
   }

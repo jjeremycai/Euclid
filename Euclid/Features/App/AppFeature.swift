@@ -11,6 +11,45 @@ import Dependencies
 import EuclidCore
 import SwiftUI
 
+private final class AppRecordingHotKeyProcessorBox: @unchecked Sendable {
+  private let lock = NSLock()
+  private var processor: RecordingHotKeyProcessor
+
+  init(processor: RecordingHotKeyProcessor) {
+    self.processor = processor
+  }
+
+  func update(settings: EuclidSettings) {
+    let useDoubleTapOnly = settings.doubleTapLockEnabled && settings.useDoubleTapOnly
+    withLock {
+      processor.updateConfiguration(
+        hotkeys: settings.recordingHotkeys,
+        useDoubleTapOnly: useDoubleTapOnly,
+        doubleTapLockEnabled: settings.doubleTapLockEnabled,
+        minimumKeyTime: settings.minimumKeyTime
+      )
+    }
+  }
+
+  func activeState() -> HotKeyProcessor.State {
+    withLock { processor.activeState }
+  }
+
+  func process(keyEvent: KeyEvent) -> RecordingHotKeyProcessor.Output? {
+    withLock { processor.process(keyEvent: keyEvent) }
+  }
+
+  func processMouseClick() -> RecordingHotKeyProcessor.Output? {
+    withLock { processor.processMouseClick() }
+  }
+
+  private func withLock<T>(_ operation: () -> T) -> T {
+    lock.lock()
+    defer { lock.unlock() }
+    return operation()
+  }
+}
+
 @Reducer
 struct AppFeature {
   enum ActiveTab: Equatable {
@@ -58,6 +97,9 @@ struct AppFeature {
     case requestMicrophone
     case requestAccessibility
     case requestInputMonitoring
+    case openMicrophoneSettings
+    case openAccessibilitySettings
+    case openInputMonitoringSettings
     case modelStatusEvaluated(Bool)
   }
 
@@ -88,7 +130,7 @@ struct AppFeature {
         
       case .task:
         return .merge(
-          startPasteLastTranscriptMonitoring(),
+          startGlobalInputMonitoring(),
           ensureSelectedModelReadiness(),
           prewarmSelectedModel(),
           startPermissionMonitoring()
@@ -127,6 +169,15 @@ struct AppFeature {
 
       case .settings(.requestInputMonitoring):
         return .send(.requestInputMonitoring)
+
+      case .settings(.openMicrophoneSettings):
+        return .send(.openMicrophoneSettings)
+
+      case .settings(.openAccessibilitySettings):
+        return .send(.openAccessibilitySettings)
+
+      case .settings(.openInputMonitoringSettings):
+        return .send(.openInputMonitoringSettings)
 
       case .settings:
         return .none
@@ -196,36 +247,131 @@ struct AppFeature {
           }
         }
 
+      case .openMicrophoneSettings:
+        return .run { _ in
+          await permissions.openMicrophoneSettings()
+        }
+
+      case .openAccessibilitySettings:
+        return .run { _ in
+          await permissions.openAccessibilitySettings()
+        }
+
+      case .openInputMonitoringSettings:
+        return .run { _ in
+          await permissions.openInputMonitoringSettings()
+        }
+
       case .modelStatusEvaluated:
         return .none
       }
     }
   }
   
-  private func startPasteLastTranscriptMonitoring() -> Effect<Action> {
+  private func startGlobalInputMonitoring() -> Effect<Action> {
     .run { send in
+      let hotKeyProcessor = AppRecordingHotKeyProcessorBox(
+        processor: RecordingHotKeyProcessor(hotkeys: [HotKey(key: nil, modifiers: [.option])])
+      )
+
       @Shared(.isSettingPasteLastTranscriptHotkey) var isSettingPasteLastTranscriptHotkey: Bool
+      @Shared(.isSettingHotKey) var isSettingHotKey: Bool
       @Shared(.euclidSettings) var euclidSettings: EuclidSettings
+      let isSettingPasteLastTranscriptHotkeyRef = $isSettingPasteLastTranscriptHotkey
+      let isSettingHotKeyRef = $isSettingHotKey
+      let euclidSettingsRef = $euclidSettings
 
-      let token = keyEventMonitor.handleKeyEvent { keyEvent in
-        // Skip if user is setting a hotkey
-        if isSettingPasteLastTranscriptHotkey {
+      let token = keyEventMonitor.handleInputEvent { inputEvent in
+        if isSettingHotKeyRef.withLock({ $0 }) || isSettingPasteLastTranscriptHotkeyRef.withLock({ $0 }) {
           return false
         }
 
-        // Check if this matches the paste last transcript hotkey
-        guard let pasteHotkey = euclidSettings.pasteLastTranscriptHotkey,
-              let key = keyEvent.key,
-              key == pasteHotkey.key,
-              keyEvent.modifiers.matchesExactly(pasteHotkey.modifiers) else {
-          return false
+        let settings = euclidSettingsRef.withLock { $0 }
+        hotKeyProcessor.update(settings: settings)
+
+        let handled: Bool
+        let actions: [Action]
+
+        switch inputEvent {
+        case .keyboard(let keyEvent):
+          if let pasteHotkey = settings.pasteLastTranscriptHotkey,
+             let key = keyEvent.key,
+             key == pasteHotkey.key,
+             keyEvent.modifiers.matchesExactly(pasteHotkey.modifiers)
+          {
+            handled = true
+            actions = [.pasteLastTranscript]
+          } else if keyEvent.key == .escape,
+                    keyEvent.modifiers.isEmpty,
+                    hotKeyProcessor.activeState() == .idle
+          {
+            handled = false
+            actions = [.transcription(.cancel)]
+          } else {
+            let useDoubleTapOnly = settings.doubleTapLockEnabled && settings.useDoubleTapOnly
+            let output = hotKeyProcessor.process(keyEvent: keyEvent)
+
+            switch output?.action {
+            case .startRecording:
+              if hotKeyProcessor.activeState() == .doubleTapLock, let hotkey = output?.hotkey {
+                handled = useDoubleTapOnly || keyEvent.key != nil
+                actions = [.transcription(.startRecording(hotkey))]
+              } else if let hotkey = output?.hotkey {
+                handled = useDoubleTapOnly || keyEvent.key != nil
+                actions = [.transcription(.hotKeyPressed(hotkey))]
+              } else {
+                handled = false
+                actions = []
+              }
+
+            case .stopRecording:
+              handled = false
+              actions = [.transcription(.hotKeyReleased)]
+
+            case .cancel:
+              handled = true
+              actions = [.transcription(.cancel)]
+
+            case .discard:
+              handled = false
+              actions = [.transcription(.discard)]
+
+            case nil:
+              handled = keyEvent.key.map { pressedKey in
+                settings.recordingHotkeys.contains(where: {
+                  $0.key == pressedKey && keyEvent.modifiers == $0.modifiers
+                })
+              } ?? false
+              actions = []
+            }
+          }
+
+        case .mouseClick:
+          switch hotKeyProcessor.processMouseClick()?.action {
+          case .cancel:
+            handled = false
+            actions = [.transcription(.cancel)]
+          case .discard:
+            handled = false
+            actions = [.transcription(.discard)]
+          case .stopRecording:
+            handled = false
+            actions = [.transcription(.hotKeyReleased)]
+          case .startRecording, nil:
+            handled = false
+            actions = []
+          }
         }
 
-        // Trigger paste action - use MainActor to avoid escaping send
-        MainActor.assumeIsolated {
-          send(.pasteLastTranscript)
+        if !actions.isEmpty {
+          Task {
+            for action in actions {
+              await send(action)
+            }
+          }
         }
-        return true // Intercept the key event
+
+        return handled
       }
 
       defer { token.cancel() }

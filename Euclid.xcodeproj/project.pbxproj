@@ -9,6 +9,17 @@
 /* Begin PBXBuildFile section */
 		4F0D6A012F1A000100000001 /* EuclidCore in Frameworks */ = {isa = PBXBuildFile; productRef = 476316262E5FB31400913CDE /* EuclidCore */; };
 		4F0D6A022F1A000100000001 /* ComposableArchitecture in Frameworks */ = {isa = PBXBuildFile; productRef = 47E05E012D444EE900D26DA6 /* ComposableArchitecture */; };
+		4F0D6A032F1A000200000001 /* Dependencies in Frameworks */ = {isa = PBXBuildFile; productRef = 47E05E092D44525B00D26DA6 /* Dependencies */; };
+		4F0D6A052F1A000100000001 /* CasePaths in Frameworks */ = {isa = PBXBuildFile; productRef = 4F0D6A062F1A000100000001 /* CasePaths */; };
+		4F0D6A082F1A000100000001 /* Clocks in Frameworks */ = {isa = PBXBuildFile; productRef = 4F0D6A092F1A000100000001 /* Clocks */; };
+		4F0D6A092F1A000200000001 /* ConcurrencyExtras in Frameworks */ = {isa = PBXBuildFile; productRef = 4F0D6A0C2F1A000100000001 /* ConcurrencyExtras */; };
+		4F0D6A0B2F1A000100000001 /* ConcurrencyExtras in Frameworks */ = {isa = PBXBuildFile; productRef = 4F0D6A0C2F1A000100000001 /* ConcurrencyExtras */; };
+		4F0D6A0E2F1A000100000001 /* IdentifiedCollections in Frameworks */ = {isa = PBXBuildFile; productRef = 4F0D6A0F2F1A000100000001 /* IdentifiedCollections */; };
+		4F0D6A112F1A000100000001 /* Sharing in Frameworks */ = {isa = PBXBuildFile; productRef = 4F0D6A122F1A000100000001 /* Sharing */; };
+		4F0D6A122F1A000200000001 /* Sharing in Frameworks */ = {isa = PBXBuildFile; productRef = 4F0D6A122F1A000100000001 /* Sharing */; };
+		4F0D6A142F1A000100000001 /* Perception in Frameworks */ = {isa = PBXBuildFile; productRef = 4F0D6A1A2F1A000100000001 /* Perception */; };
+		4F0D6A152F1A000100000001 /* PerceptionCore in Frameworks */ = {isa = PBXBuildFile; productRef = 4F0D6A1B2F1A000100000001 /* PerceptionCore */; };
+		4F0D6A162F1A000100000001 /* IssueReporting in Frameworks */ = {isa = PBXBuildFile; productRef = 4F0D6A1C2F1A000100000001 /* IssueReporting */; };
 		47512ABF2E14D8C9000E25BA /* WhisperKit in Frameworks */ = {isa = PBXBuildFile; productRef = 47512ABE2E14D8C9000E25BA /* WhisperKit */; };
 		476316272E5FB31400913CDE /* EuclidCore in Frameworks */ = {isa = PBXBuildFile; productRef = 476316262E5FB31400913CDE /* EuclidCore */; };
 		4765045E2D45900200C7EA60 /* Pow in Frameworks */ = {isa = PBXBuildFile; productRef = 4765045D2D45900200C7EA60 /* Pow */; };
@@ -74,7 +85,10 @@
 			buildActionMask = 2147483647;
 			files = (
 				4F0D6A022F1A000100000001 /* ComposableArchitecture in Frameworks */,
+				4F0D6A092F1A000200000001 /* ConcurrencyExtras in Frameworks */,
+				4F0D6A032F1A000200000001 /* Dependencies in Frameworks */,
 				4F0D6A012F1A000100000001 /* EuclidCore in Frameworks */,
+				4F0D6A122F1A000200000001 /* Sharing in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -84,10 +98,18 @@
 			files = (
 				476BAD3E2D47E7880088C61F /* Sparkle in Frameworks */,
 				476316272E5FB31400913CDE /* EuclidCore in Frameworks */,
+				4F0D6A052F1A000100000001 /* CasePaths in Frameworks */,
+				4F0D6A082F1A000100000001 /* Clocks in Frameworks */,
+				4F0D6A0B2F1A000100000001 /* ConcurrencyExtras in Frameworks */,
 				47E05E0A2D44525B00D26DA6 /* Dependencies in Frameworks */,
+				4F0D6A162F1A000100000001 /* IssueReporting in Frameworks */,
+				4F0D6A0E2F1A000100000001 /* IdentifiedCollections in Frameworks */,
 				B5045C972D78DED500D0A119 /* MarkdownUI in Frameworks */,
+				4F0D6A142F1A000100000001 /* Perception in Frameworks */,
+				4F0D6A152F1A000100000001 /* PerceptionCore in Frameworks */,
 				47512ABF2E14D8C9000E25BA /* WhisperKit in Frameworks */,
 				47E05E052D444EF800D26DA6 /* Sauce in Frameworks */,
+				4F0D6A112F1A000100000001 /* Sharing in Frameworks */,
 				47E16A622EC6C9D300885CF7 /* FluidAudio in Frameworks */,
 				47C08AB62DE9F61B00564AE6 /* Inject in Frameworks */,
 				4765045E2D45900200C7EA60 /* Pow in Frameworks */,
@@ -151,7 +173,10 @@
 			name = EuclidTests;
 			packageProductDependencies = (
 				47E05E012D444EE900D26DA6 /* ComposableArchitecture */,
+				4F0D6A0C2F1A000100000001 /* ConcurrencyExtras */,
+				47E05E092D44525B00D26DA6 /* Dependencies */,
 				476316262E5FB31400913CDE /* EuclidCore */,
+				4F0D6A122F1A000100000001 /* Sharing */,
 			);
 			productName = EuclidTests;
 			productReference = 478637A52D48725900319BFA /* EuclidTests.xctest */;
@@ -175,13 +200,21 @@
 			name = Euclid;
 			packageProductDependencies = (
 				47E05E012D444EE900D26DA6 /* ComposableArchitecture */,
+				4F0D6A062F1A000100000001 /* CasePaths */,
+				4F0D6A092F1A000100000001 /* Clocks */,
+				4F0D6A0C2F1A000100000001 /* ConcurrencyExtras */,
 				47E05E042D444EF800D26DA6 /* Sauce */,
 				47E05E092D44525B00D26DA6 /* Dependencies */,
 				47E05E0B2D44525B00D26DA6 /* DependenciesMacros */,
+				4F0D6A0F2F1A000100000001 /* IdentifiedCollections */,
+				4F0D6A1C2F1A000100000001 /* IssueReporting */,
+				4F0D6A1A2F1A000100000001 /* Perception */,
+				4F0D6A1B2F1A000100000001 /* PerceptionCore */,
 				4765045D2D45900200C7EA60 /* Pow */,
 				476BAD3D2D47E7880088C61F /* Sparkle */,
 				B5045C962D78DED500D0A119 /* MarkdownUI */,
 				47C08AB52DE9F61B00564AE6 /* Inject */,
+				4F0D6A122F1A000100000001 /* Sharing */,
 				47512ABE2E14D8C9000E25BA /* WhisperKit */,
 				476316262E5FB31400913CDE /* EuclidCore */,
 				47E16A612EC6C9D300885CF7 /* FluidAudio */,
@@ -220,8 +253,15 @@
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
 				47E05E002D444EE900D26DA6 /* XCRemoteSwiftPackageReference "swift-composable-architecture" */,
+				4F0D6A072F1A000100000001 /* XCRemoteSwiftPackageReference "swift-case-paths" */,
+				4F0D6A0A2F1A000100000001 /* XCRemoteSwiftPackageReference "swift-clocks" */,
+				4F0D6A0D2F1A000100000001 /* XCRemoteSwiftPackageReference "swift-concurrency-extras" */,
+				4F0D6A102F1A000100000001 /* XCRemoteSwiftPackageReference "swift-identified-collections" */,
+				4F0D6A172F1A000100000001 /* XCRemoteSwiftPackageReference "swift-perception" */,
+				4F0D6A132F1A000100000001 /* XCRemoteSwiftPackageReference "swift-sharing" */,
 				47E05E032D444EF800D26DA6 /* XCRemoteSwiftPackageReference "Sauce" */,
 				47E05E082D44525B00D26DA6 /* XCRemoteSwiftPackageReference "swift-dependencies" */,
+				4F0D6A182F1A000100000001 /* XCRemoteSwiftPackageReference "xctest-dynamic-overlay" */,
 				4765045C2D45900200C7EA60 /* XCRemoteSwiftPackageReference "Pow" */,
 				476BAD3C2D47E7880088C61F /* XCRemoteSwiftPackageReference "Sparkle" */,
 				B5045C952D78DED500D0A119 /* XCRemoteSwiftPackageReference "swift-markdown-ui" */,
@@ -290,6 +330,7 @@
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
+				CODE_SIGNING_ALLOWED = NO;
 				CURRENT_PROJECT_VERSION = 83;
 				DEAD_CODE_STRIPPING = YES;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -298,7 +339,7 @@
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = NO;
 				SWIFT_VERSION = 5.0;
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Euclid.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Euclid";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Euclid Debug.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Euclid Debug";
 			};
 			name = Debug;
 		};
@@ -307,6 +348,7 @@
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
+				CODE_SIGNING_ALLOWED = NO;
 				CURRENT_PROJECT_VERSION = 83;
 				DEAD_CODE_STRIPPING = YES;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -452,8 +494,11 @@
 				CODE_SIGN_ENTITLEMENTS = Euclid/Euclid.entitlements;
 				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
+				CODE_SIGNING_ALLOWED = NO;
+				CODE_SIGNING_REQUIRED = NO;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 83;
+				AD_HOC_CODE_SIGNING_ALLOWED = YES;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_ASSET_PATHS = "\"Euclid/Preview Content\"";
 				DEVELOPMENT_TEAM = QC99C9JE59;
@@ -486,6 +531,7 @@
 					"-interposable",
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.jjeremycai.Euclid.debug;
+				PRODUCT_MODULE_NAME = Euclid;
 				PRODUCT_NAME = "Euclid Debug";
 				RUNTIME_EXCEPTION_ALLOW_DYLD_ENVIRONMENT_VARIABLES = NO;
 				RUNTIME_EXCEPTION_ALLOW_JIT = NO;
@@ -588,6 +634,62 @@
 /* End XCLocalSwiftPackageReference section */
 
 /* Begin XCRemoteSwiftPackageReference section */
+		4F0D6A072F1A000100000001 /* XCRemoteSwiftPackageReference "swift-case-paths" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/pointfreeco/swift-case-paths";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 1.7.2;
+			};
+		};
+		4F0D6A0A2F1A000100000001 /* XCRemoteSwiftPackageReference "swift-clocks" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/pointfreeco/swift-clocks";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 1.0.6;
+			};
+		};
+		4F0D6A0D2F1A000100000001 /* XCRemoteSwiftPackageReference "swift-concurrency-extras" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/pointfreeco/swift-concurrency-extras";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 1.3.2;
+			};
+		};
+		4F0D6A102F1A000100000001 /* XCRemoteSwiftPackageReference "swift-identified-collections" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/pointfreeco/swift-identified-collections";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 1.1.1;
+			};
+		};
+		4F0D6A132F1A000100000001 /* XCRemoteSwiftPackageReference "swift-sharing" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/pointfreeco/swift-sharing";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 2.7.4;
+			};
+		};
+		4F0D6A172F1A000100000001 /* XCRemoteSwiftPackageReference "swift-perception" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/pointfreeco/swift-perception";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 2.0.9;
+			};
+		};
+		4F0D6A182F1A000100000001 /* XCRemoteSwiftPackageReference "xctest-dynamic-overlay" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/pointfreeco/xctest-dynamic-overlay";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 1.8.0;
+			};
+		};
 		47512ABD2E14D8C9000E25BA /* XCRemoteSwiftPackageReference "WhisperKit" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/argmaxinc/WhisperKit";
@@ -663,6 +765,46 @@
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
+		4F0D6A062F1A000100000001 /* CasePaths */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 4F0D6A072F1A000100000001 /* XCRemoteSwiftPackageReference "swift-case-paths" */;
+			productName = CasePaths;
+		};
+		4F0D6A092F1A000100000001 /* Clocks */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 4F0D6A0A2F1A000100000001 /* XCRemoteSwiftPackageReference "swift-clocks" */;
+			productName = Clocks;
+		};
+		4F0D6A0C2F1A000100000001 /* ConcurrencyExtras */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 4F0D6A0D2F1A000100000001 /* XCRemoteSwiftPackageReference "swift-concurrency-extras" */;
+			productName = ConcurrencyExtras;
+		};
+		4F0D6A0F2F1A000100000001 /* IdentifiedCollections */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 4F0D6A102F1A000100000001 /* XCRemoteSwiftPackageReference "swift-identified-collections" */;
+			productName = IdentifiedCollections;
+		};
+		4F0D6A122F1A000100000001 /* Sharing */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 4F0D6A132F1A000100000001 /* XCRemoteSwiftPackageReference "swift-sharing" */;
+			productName = Sharing;
+		};
+		4F0D6A1A2F1A000100000001 /* Perception */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 4F0D6A172F1A000100000001 /* XCRemoteSwiftPackageReference "swift-perception" */;
+			productName = Perception;
+		};
+		4F0D6A1B2F1A000100000001 /* PerceptionCore */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 4F0D6A172F1A000100000001 /* XCRemoteSwiftPackageReference "swift-perception" */;
+			productName = PerceptionCore;
+		};
+		4F0D6A1C2F1A000100000001 /* IssueReporting */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 4F0D6A182F1A000100000001 /* XCRemoteSwiftPackageReference "xctest-dynamic-overlay" */;
+			productName = IssueReporting;
+		};
 		47512ABE2E14D8C9000E25BA /* WhisperKit */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = 47512ABD2E14D8C9000E25BA /* XCRemoteSwiftPackageReference "WhisperKit" */;

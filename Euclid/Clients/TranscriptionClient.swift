@@ -16,7 +16,7 @@ private let transcriptionLogger = EuclidLog.transcription
 private let modelsLogger = EuclidLog.models
 private let parakeetLogger = EuclidLog.parakeet
 
-/// A client that downloads and loads WhisperKit models, then transcribes audio files using the loaded model.
+/// A client that coordinates WhisperKit and Parakeet model loading, then transcribes audio files using the loaded backend.
 /// Exposes progress callbacks to report overall download-and-load percentage and transcription progress.
 @DependencyClient
 struct TranscriptionClient {
@@ -65,8 +65,8 @@ extension DependencyValues {
   }
 }
 
-/// An `actor` that manages WhisperKit models by downloading (from Hugging Face),
-//  loading them into memory, and then performing transcriptions.
+/// An `actor` that manages transcription backends by downloading model assets,
+/// loading them into memory, and then performing transcriptions.
 
 actor TranscriptionClientLive {
   // MARK: - Stored Properties
@@ -92,16 +92,8 @@ actor TranscriptionClientLive {
   /// Ensures the given `variant` model is downloaded and loaded, reporting
   /// overall progress (0%–50% for downloading, 50%–100% for loading).
   func downloadAndLoadModel(variant: String, progressCallback: @escaping (Progress) -> Void) async throws {
-    // If Parakeet, use Parakeet client path
-    if isParakeet(variant) {
-      try await parakeet.ensureLoaded(modelName: variant, progress: progressCallback)
-      currentModelName = variant
-      return
-    }
-    // Resolve wildcard patterns (e.g., "distil*large-v3") to a concrete variant
-    let variant = await resolveVariant(variant)
-    // Special handling for corrupted or malformed variant names
-    if variant.isEmpty {
+    let backend = await resolvedBackend(for: variant)
+    if backend.modelName.isEmpty {
       throw NSError(
         domain: "TranscriptionClient",
         code: -3,
@@ -111,98 +103,51 @@ actor TranscriptionClientLive {
       )
     }
 
-    let overallProgress = Progress(totalUnitCount: 100)
-    overallProgress.completedUnitCount = 0
-    progressCallback(overallProgress)
-
-    modelsLogger.info("Preparing model download and load for \(variant)")
-
-    // 1) Model download phase (0-50% progress)
-    if !(await isModelDownloaded(variant)) {
-      try await downloadModelIfNeeded(variant: variant) { downloadProgress in
-        let fraction = downloadProgress.fractionCompleted * 0.5
-        overallProgress.completedUnitCount = Int64(fraction * 100)
-        progressCallback(overallProgress)
-      }
-    } else {
-      // Skip download phase if already downloaded
-      overallProgress.completedUnitCount = 50
-      progressCallback(overallProgress)
-    }
-
-    // 2) Model loading phase (50-100% progress)
-    try await loadWhisperKitModel(variant) { loadingProgress in
-      let fraction = 0.5 + (loadingProgress.fractionCompleted * 0.5)
-      overallProgress.completedUnitCount = Int64(fraction * 100)
-      progressCallback(overallProgress)
-    }
-
-    // Final progress update
-    overallProgress.completedUnitCount = 100
-    progressCallback(overallProgress)
+    try await loadModel(backend: backend, progressCallback: progressCallback)
   }
 
   /// Deletes a model from disk if it exists
   func deleteModel(variant: String) async throws {
-    if isParakeet(variant) {
-      try await parakeet.deleteCaches(modelName: variant)
-      if currentModelName == variant { unloadCurrentModel() }
-      return
-    }
-    let modelFolder = modelPath(for: variant)
-
-    // Check if the model exists
-    guard FileManager.default.fileExists(atPath: modelFolder.path) else {
-      // Model doesn't exist, nothing to delete
-      return
-    }
-
-    // If this is the currently loaded model, unload it first
-    if currentModelName == variant {
-      unloadCurrentModel()
-    }
-
-    // Delete the model directory
-    try FileManager.default.removeItem(at: modelFolder)
-
-    modelsLogger.info("Deleted model \(variant)")
+    try await deleteModel(backend: backend(for: variant))
   }
 
   /// Returns `true` if the model is already downloaded to the local folder.
   /// Performs a thorough check to ensure the model files are actually present and usable.
   func isModelDownloaded(_ modelName: String) async -> Bool {
-    if isParakeet(modelName) {
-      let available = await parakeet.isModelAvailable(modelName)
+    switch backend(for: modelName) {
+    case .parakeet(let variant):
+      let available = await parakeet.isModelAvailable(variant.identifier)
       parakeetLogger.debug("Parakeet available? \(available)")
       return available
-    }
-    let modelFolderPath = modelPath(for: modelName).path
-    let fileManager = FileManager.default
+    case .whisperKit:
+      let modelFolderPath = modelPath(for: modelName).path
+      let fileManager = FileManager.default
 
-    // First, check if the basic model directory exists
-    guard fileManager.fileExists(atPath: modelFolderPath) else {
-      // Don't print logs that would spam the console
-      return false
-    }
-
-    do {
-      // Check if the directory has actual model files in it
-      let contents = try fileManager.contentsOfDirectory(atPath: modelFolderPath)
-
-      // Model should have multiple files and certain key components
-      guard !contents.isEmpty else {
+      // First, check if the basic model directory exists
+      guard fileManager.fileExists(atPath: modelFolderPath) else {
+        // Don't print logs that would spam the console
         return false
       }
 
-      // Check for specific model structure - need both tokenizer and model files
-      let hasModelFiles = contents.contains { $0.hasSuffix(".mlmodelc") || $0.contains("model") }
-      let tokenizerFolderPath = tokenizerPath(for: modelName).path
-      let hasTokenizer = fileManager.fileExists(atPath: tokenizerFolderPath)
+      do {
+        // Check if the directory has actual model files in it
+        let contents = try fileManager.contentsOfDirectory(atPath: modelFolderPath)
 
-      // Both conditions must be true for a model to be considered downloaded
-      return hasModelFiles && hasTokenizer
-    } catch {
-      return false
+        // Model should have multiple files and certain key components
+        guard !contents.isEmpty else {
+          return false
+        }
+
+        // Check for specific model structure - need both tokenizer and model files
+        let hasModelFiles = contents.contains { $0.hasSuffix(".mlmodelc") || $0.contains("model") }
+        let tokenizerFolderPath = tokenizerPath(for: modelName).path
+        let hasTokenizer = fileManager.fileExists(atPath: tokenizerFolderPath)
+
+        // Both conditions must be true for a model to be considered downloaded
+        return hasModelFiles && hasTokenizer
+      } catch {
+        return false
+      }
     }
   }
 
@@ -215,8 +160,8 @@ actor TranscriptionClientLive {
   func getAvailableModels() async throws -> [String] {
     var names = try await WhisperKit.fetchAvailableModels()
     #if canImport(FluidAudio)
-    for model in ParakeetModel.allCases.reversed() {
-      if !names.contains(model.identifier) { names.insert(model.identifier, at: 0) }
+    for identifier in ParakeetModel.allCases.reversed().map(\.identifier) {
+      if !names.contains(identifier) { names.insert(identifier, at: 0) }
     }
     #endif
     return names
@@ -249,64 +194,69 @@ actor TranscriptionClientLive {
     progressCallback: @escaping (Progress) -> Void
   ) async throws -> String {
     let startAll = Date()
-    if isParakeet(model) {
-      transcriptionLogger.notice("Transcribing with Parakeet model=\(model) file=\(url.lastPathComponent)")
-      let startLoad = Date()
-      try await downloadAndLoadModel(variant: model) { p in
-        progressCallback(p)
-      }
-      transcriptionLogger.info("Parakeet ensureLoaded took \(String(format: "%.2f", Date().timeIntervalSince(startLoad)))s")
-      let preparedClip = try ParakeetClipPreparer.ensureMinimumDuration(url: url, logger: parakeetLogger)
-      defer { preparedClip.cleanup() }
-      let startTx = Date()
-      if !enabledVocabularyTerms(from: vocabularyTerms).isEmpty {
-        transcriptionLogger.debug("Ignoring vocabulary bias for Parakeet model=\(model)")
-      }
-      let text = try await parakeet.transcribe(preparedClip.url)
-      transcriptionLogger.info("Parakeet transcription took \(String(format: "%.2f", Date().timeIntervalSince(startTx)))s")
-      transcriptionLogger.info("Parakeet request total elapsed \(String(format: "%.2f", Date().timeIntervalSince(startAll)))s")
-      return text
-    }
-    let model = await resolveVariant(model)
-    // Load or switch to the required model if needed.
-    if whisperKit == nil || model != currentModelName {
-      unloadCurrentModel()
-      let startLoad = Date()
-      try await downloadAndLoadModel(variant: model) { p in
-        // Debug logging, or scale as desired:
-        progressCallback(p)
-      }
-      let loadDuration = Date().timeIntervalSince(startLoad)
-      transcriptionLogger.info("WhisperKit ensureLoaded model=\(model) took \(String(format: "%.2f", loadDuration))s")
-    }
-
-    guard let whisperKit = whisperKit else {
+    let backend = await resolvedBackend(for: model)
+    if backend.modelName.isEmpty {
       throw NSError(
         domain: "TranscriptionClient",
-        code: -1,
+        code: -3,
         userInfo: [
-          NSLocalizedDescriptionKey: "Failed to initialize WhisperKit for model: \(model)",
+          NSLocalizedDescriptionKey: "Cannot download model: Empty model name",
         ]
       )
     }
 
-    // Perform the transcription.
-    transcriptionLogger.notice("Transcribing with WhisperKit model=\(model) file=\(url.lastPathComponent)")
-    let startTx = Date()
-    var decodeOptions = options
-    let enabledVocabularyTermCount = enabledVocabularyTerms(from: vocabularyTerms).count
-    if let promptTokens = vocabularyPromptTokens(from: vocabularyTerms, tokenizer: whisperKit.tokenizer) {
-      decodeOptions.promptTokens = promptTokens
-      transcriptionLogger.info("Applied \(enabledVocabularyTermCount) vocabulary term(s) to Whisper prompt")
+    switch backend {
+    case .parakeet(let variant):
+      transcriptionLogger.notice("Transcribing with \(backend.logLabel) model=\(variant.identifier) file=\(url.lastPathComponent)")
+      let startLoad = Date()
+      try await loadModel(backend: backend, progressCallback: progressCallback)
+      transcriptionLogger.info("\(backend.logLabel) ensureLoaded took \(String(format: "%.2f", Date().timeIntervalSince(startLoad)))s")
+
+      let preparedClip = try ParakeetClipPreparer.ensureMinimumDuration(url: url, logger: parakeetLogger)
+      defer { preparedClip.cleanup() }
+
+      let startTx = Date()
+      if !backend.supportsVocabularyPrompt, !enabledVocabularyTerms(from: vocabularyTerms).isEmpty {
+        transcriptionLogger.debug("Ignoring vocabulary bias for \(backend.logLabel) model=\(variant.identifier)")
+      }
+      let text = try await parakeet.transcribe(preparedClip.url)
+      transcriptionLogger.info("\(backend.logLabel) transcription took \(String(format: "%.2f", Date().timeIntervalSince(startTx)))s")
+      transcriptionLogger.info("\(backend.logLabel) request total elapsed \(String(format: "%.2f", Date().timeIntervalSince(startAll)))s")
+      return text
+
+    case .whisperKit(let modelName):
+      if whisperKit == nil || modelName != currentModelName {
+        unloadCurrentModel()
+        let startLoad = Date()
+        try await loadModel(backend: backend, progressCallback: progressCallback)
+        let loadDuration = Date().timeIntervalSince(startLoad)
+        transcriptionLogger.info("\(backend.logLabel) ensureLoaded model=\(modelName) took \(String(format: "%.2f", loadDuration))s")
+      }
+
+      guard let whisperKit = whisperKit else {
+        throw NSError(
+          domain: "TranscriptionClient",
+          code: -1,
+          userInfo: [
+            NSLocalizedDescriptionKey: "Failed to initialize WhisperKit for model: \(modelName)",
+          ]
+        )
+      }
+
+      transcriptionLogger.notice("Transcribing with \(backend.logLabel) model=\(modelName) file=\(url.lastPathComponent)")
+      let startTx = Date()
+      var decodeOptions = options
+      let enabledVocabularyTermCount = enabledVocabularyTerms(from: vocabularyTerms).count
+      if backend.supportsVocabularyPrompt, let promptTokens = vocabularyPromptTokens(from: vocabularyTerms, tokenizer: whisperKit.tokenizer) {
+        decodeOptions.promptTokens = promptTokens
+        transcriptionLogger.info("Applied \(enabledVocabularyTermCount) vocabulary term(s) to Whisper prompt")
+      }
+
+      let results = try await whisperKit.transcribe(audioPath: url.path, decodeOptions: decodeOptions)
+      transcriptionLogger.info("\(backend.logLabel) transcription took \(String(format: "%.2f", Date().timeIntervalSince(startTx)))s")
+      transcriptionLogger.info("\(backend.logLabel) request total elapsed \(String(format: "%.2f", Date().timeIntervalSince(startAll)))s")
+      return results.map(\.text).joined(separator: " ")
     }
-
-    let results = try await whisperKit.transcribe(audioPath: url.path, decodeOptions: decodeOptions)
-    transcriptionLogger.info("WhisperKit transcription took \(String(format: "%.2f", Date().timeIntervalSince(startTx)))s")
-    transcriptionLogger.info("WhisperKit request total elapsed \(String(format: "%.2f", Date().timeIntervalSince(startAll)))s")
-
-    // Concatenate results from all segments.
-    let text = results.map(\.text).joined(separator: " ")
-    return text
   }
 
   // MARK: - Private Helpers
@@ -328,8 +278,70 @@ actor TranscriptionClientLive {
     return ModelPatternMatcher.resolvePattern(variant, from: models) ?? variant
   }
 
-  private func isParakeet(_ name: String) -> Bool {
-    ParakeetModel(rawValue: name) != nil
+  private func backend(for modelName: String) -> TranscriptionBackend {
+    TranscriptionBackend(modelName: modelName)
+  }
+
+  private func resolvedBackend(for modelName: String) async -> TranscriptionBackend {
+    TranscriptionBackend(modelName: await resolveVariant(modelName))
+  }
+
+  private func loadModel(
+    backend: TranscriptionBackend,
+    progressCallback: @escaping (Progress) -> Void
+  ) async throws {
+    switch backend {
+    case .parakeet(let variant):
+      try await parakeet.ensureLoaded(modelName: variant.identifier, progress: progressCallback)
+      currentModelName = variant.identifier
+    case .whisperKit(let modelName):
+      let overallProgress = Progress(totalUnitCount: 100)
+      overallProgress.completedUnitCount = 0
+      progressCallback(overallProgress)
+
+      modelsLogger.info("Preparing model download and load for \(backend.logLabel) model=\(modelName)")
+
+      if !(await isModelDownloaded(modelName)) {
+        try await downloadModelIfNeeded(variant: modelName) { downloadProgress in
+          let fraction = downloadProgress.fractionCompleted * 0.5
+          overallProgress.completedUnitCount = Int64(fraction * 100)
+          progressCallback(overallProgress)
+        }
+      } else {
+        overallProgress.completedUnitCount = 50
+        progressCallback(overallProgress)
+      }
+
+      try await loadWhisperKitModel(modelName) { loadingProgress in
+        let fraction = 0.5 + (loadingProgress.fractionCompleted * 0.5)
+        overallProgress.completedUnitCount = Int64(fraction * 100)
+        progressCallback(overallProgress)
+      }
+
+      overallProgress.completedUnitCount = 100
+      progressCallback(overallProgress)
+    }
+  }
+
+  private func deleteModel(backend: TranscriptionBackend) async throws {
+    switch backend {
+    case .parakeet(let variant):
+      try await parakeet.deleteCaches(modelName: variant.identifier)
+      if currentModelName == variant.identifier { unloadCurrentModel() }
+    case .whisperKit(let modelName):
+      let modelFolder = modelPath(for: modelName)
+
+      guard FileManager.default.fileExists(atPath: modelFolder.path) else {
+        return
+      }
+
+      if currentModelName == modelName {
+        unloadCurrentModel()
+      }
+
+      try FileManager.default.removeItem(at: modelFolder)
+      modelsLogger.info("Deleted model \(modelName)")
+    }
   }
 
   private func enabledVocabularyTerms(from vocabularyTerms: [VocabularyTerm]) -> [String] {
