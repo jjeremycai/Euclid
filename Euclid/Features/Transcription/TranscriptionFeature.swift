@@ -324,28 +324,15 @@ private extension TranscriptionFeature {
     let duration = state.recordingStartTime.map { Date().timeIntervalSince($0) } ?? 0
 
     transcriptionFeatureLogger.info("Raw transcription: '\(result)'")
-    let remappings = state.euclidSettings.wordRemappings
-    let removalsEnabled = state.euclidSettings.wordRemovalsEnabled
-    let removals = state.euclidSettings.wordRemovals
-    let modifiedResult: String
+    let modifiedResult = TranscriptTextProcessor.process(
+      result,
+      settings: state.euclidSettings,
+      skipModifications: state.isRemappingScratchpadFocused
+    )
     if state.isRemappingScratchpadFocused {
-      modifiedResult = result
       transcriptionFeatureLogger.info("Scratchpad focused; skipping word modifications")
-    } else {
-      var output = result
-      if removalsEnabled {
-        let removedResult = WordRemovalApplier.apply(output, removals: removals)
-        if removedResult != output {
-          let enabledRemovalCount = removals.filter(\.isEnabled).count
-          transcriptionFeatureLogger.info("Applied \(enabledRemovalCount) word removal(s)")
-        }
-        output = removedResult
-      }
-      let remappedResult = WordRemappingApplier.apply(output, remappings: remappings)
-      if remappedResult != output {
-        transcriptionFeatureLogger.info("Applied \(remappings.count) word remapping(s)")
-      }
-      modifiedResult = remappedResult
+    } else if modifiedResult != result {
+      transcriptionFeatureLogger.info("Applied transcript text post-processing")
     }
 
     guard !modifiedResult.isEmpty else {

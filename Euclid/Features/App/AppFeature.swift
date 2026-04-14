@@ -54,6 +54,7 @@ private final class AppRecordingHotKeyProcessorBox: @unchecked Sendable {
 struct AppFeature {
   enum ActiveTab: Equatable {
     case settings
+    case files
     case remappings
     case history
     case about
@@ -63,6 +64,7 @@ struct AppFeature {
 	struct State {
 		var transcription: TranscriptionFeature.State = .init()
 		var settings: SettingsFeature.State = .init()
+		var files: FilesFeature.State = .init()
 		var history: HistoryFeature.State = .init()
 		var activeTab: ActiveTab = .settings
 		@Shared(.euclidSettings) var euclidSettings: EuclidSettings
@@ -84,9 +86,11 @@ struct AppFeature {
     case binding(BindingAction<State>)
     case transcription(TranscriptionFeature.Action)
     case settings(SettingsFeature.Action)
+    case files(FilesFeature.Action)
     case history(HistoryFeature.Action)
     case dictionarySampleRecordingTapped
     case setActiveTab(ActiveTab)
+    case showFiles
     case task
     case pasteLastTranscript
 
@@ -117,6 +121,10 @@ struct AppFeature {
 
     Scope(state: \.settings, action: \.settings) {
       SettingsFeature()
+    }
+
+    Scope(state: \.files, action: \.files) {
+      FilesFeature()
     }
 
     Scope(state: \.history, action: \.history) {
@@ -164,6 +172,9 @@ struct AppFeature {
       case .settings(.requestMicrophone):
         return .send(.requestMicrophone)
 
+      case .files:
+        return .none
+
       case .settings(.requestAccessibility):
         return .send(.requestAccessibility)
 
@@ -199,6 +210,9 @@ struct AppFeature {
         return .none
       case .history:
         return .none
+		case .showFiles:
+			state.activeTab = .files
+			return .none
 		case let .setActiveTab(tab):
 			state.activeTab = tab
 			return .none
@@ -455,6 +469,14 @@ struct AppView: View {
         .tag(AppFeature.ActiveTab.settings)
 
         Button {
+          store.send(.setActiveTab(.files))
+        } label: {
+          Label("Files", systemImage: "tray.and.arrow.down")
+        }
+        .buttonStyle(.plain)
+        .tag(AppFeature.ActiveTab.files)
+
+        Button {
           store.send(.setActiveTab(.remappings))
         } label: {
           Label("Dictionary", systemImage: "text.badge.plus")
@@ -488,6 +510,9 @@ struct AppView: View {
           inputMonitoringPermission: store.inputMonitoringPermission
         )
         .navigationTitle("Settings")
+      case .files:
+        FilesView(store: store.scope(state: \.files, action: \.files))
+          .navigationTitle("Files")
       case .remappings:
         WordRemappingsView(
           store: store.scope(state: \.settings, action: \.settings),

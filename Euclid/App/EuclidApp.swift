@@ -19,6 +19,10 @@ struct EuclidApp: App {
             // Copy last transcript to clipboard
             MenuBarCopyLastTranscriptButton()
 
+            Button("Transcribe Files…") {
+                appDelegate.presentFilesView()
+            }
+
             Button("Settings...") {
                 appDelegate.presentSettingsView()
             }.keyboardShortcut(",")
@@ -43,6 +47,10 @@ struct EuclidApp: App {
 			.commands {
 				CommandGroup(after: .appInfo) {
 					CheckForUpdatesView()
+
+					Button("Transcribe Files…") {
+						appDelegate.presentFilesView()
+					}
 
 					Button("Settings...") {
 						appDelegate.presentSettingsView()

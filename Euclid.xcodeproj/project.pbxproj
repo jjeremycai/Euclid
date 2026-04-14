@@ -15,6 +15,7 @@
 		4F0D6A092F1A000200000001 /* ConcurrencyExtras in Frameworks */ = {isa = PBXBuildFile; productRef = 4F0D6A0C2F1A000100000001 /* ConcurrencyExtras */; };
 		4F0D6A0B2F1A000100000001 /* ConcurrencyExtras in Frameworks */ = {isa = PBXBuildFile; productRef = 4F0D6A0C2F1A000100000001 /* ConcurrencyExtras */; };
 		4F0D6A0E2F1A000100000001 /* IdentifiedCollections in Frameworks */ = {isa = PBXBuildFile; productRef = 4F0D6A0F2F1A000100000001 /* IdentifiedCollections */; };
+		4F9A4C3B2F1A000200000001 /* IdentifiedCollections in Frameworks */ = {isa = PBXBuildFile; productRef = 4F0D6A0F2F1A000100000001 /* IdentifiedCollections */; };
 		4F0D6A112F1A000100000001 /* Sharing in Frameworks */ = {isa = PBXBuildFile; productRef = 4F0D6A122F1A000100000001 /* Sharing */; };
 		4F0D6A122F1A000200000001 /* Sharing in Frameworks */ = {isa = PBXBuildFile; productRef = 4F0D6A122F1A000100000001 /* Sharing */; };
 		4F0D6A142F1A000100000001 /* Perception in Frameworks */ = {isa = PBXBuildFile; productRef = 4F0D6A1A2F1A000100000001 /* Perception */; };
@@ -88,6 +89,7 @@
 				4F0D6A092F1A000200000001 /* ConcurrencyExtras in Frameworks */,
 				4F0D6A032F1A000200000001 /* Dependencies in Frameworks */,
 				4F0D6A012F1A000100000001 /* EuclidCore in Frameworks */,
+				4F9A4C3B2F1A000200000001 /* IdentifiedCollections in Frameworks */,
 				4F0D6A122F1A000200000001 /* Sharing in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -176,6 +178,7 @@
 				4F0D6A0C2F1A000100000001 /* ConcurrencyExtras */,
 				47E05E092D44525B00D26DA6 /* Dependencies */,
 				476316262E5FB31400913CDE /* EuclidCore */,
+				4F0D6A0F2F1A000100000001 /* IdentifiedCollections */,
 				4F0D6A122F1A000100000001 /* Sharing */,
 			);
 			productName = EuclidTests;

@@ -104,7 +104,24 @@ class EuclidAppDelegate: NSObject, NSApplicationDelegate {
 	}
 
 	func presentSettingsView() {
-		windowCoordinator.presentSettingsView(store: EuclidApp.appStore)
+		presentSettingsView(initialTab: .settings)
+	}
+
+	func presentFilesView() {
+		presentSettingsView(initialTab: .files)
+	}
+
+	func presentSettingsView(initialTab: AppFeature.ActiveTab) {
+		Task { @MainActor in
+			switch initialTab {
+			case .files:
+				EuclidApp.appStore.send(.showFiles)
+			default:
+				EuclidApp.appStore.send(.setActiveTab(initialTab))
+			}
+
+			windowCoordinator.presentSettingsView(store: EuclidApp.appStore)
+		}
 	}
 
 	@objc private func handleAppModeUpdate() {
