@@ -28,10 +28,11 @@ struct HotKeySectionView: View {
                         title: index == 0 ? "Primary" : "Shortcut \(index + 1)",
                         hotKey: hotKey,
                         isActive: store.recordingHotKeyCaptureIndex == index,
-                        modifiers: store.recordingHotKeyCaptureIndex == index ? store.currentModifiers : hotKey.modifiers,
-                        key: store.recordingHotKeyCaptureIndex == index ? nil : hotKey.key,
+                        modifiers: displayedModifiers(for: hotKey, at: index),
+                        key: displayedKey(for: hotKey, at: index),
                         canRemove: index > 0,
-                        onTap: { store.send(.startSettingRecordingHotKey(index)) },
+                        onStartEditing: { store.send(.startSettingRecordingHotKey(index)) },
+                        onCancelEditing: { store.send(.cancelSettingRecordingHotKeyCapture) },
                         onRemove: { store.send(.removeRecordingHotKey(index)) },
                         onSelectModifierSide: { kind, side in
                             store.send(.setModifierSide(index, kind, side))
@@ -47,7 +48,8 @@ struct HotKeySectionView: View {
                         modifiers: store.currentModifiers,
                         key: nil,
                         canRemove: false,
-                        onTap: {},
+                        onStartEditing: {},
+                        onCancelEditing: { store.send(.cancelSettingRecordingHotKeyCapture) },
                         onRemove: {},
                         onSelectModifierSide: { _, _ in }
                     )
@@ -107,6 +109,20 @@ struct HotKeySectionView: View {
         }
         .enableInjection()
     }
+
+    private func displayedModifiers(for hotKey: HotKey, at index: Int) -> Modifiers {
+        guard store.recordingHotKeyCaptureIndex == index, !store.currentModifiers.isEmpty else {
+            return hotKey.modifiers
+        }
+        return store.currentModifiers
+    }
+
+    private func displayedKey(for hotKey: HotKey, at index: Int) -> Key? {
+        guard store.recordingHotKeyCaptureIndex == index, !store.currentModifiers.isEmpty else {
+            return hotKey.key
+        }
+        return nil
+    }
 }
 
 private struct RecordingHotKeyRow: View {
@@ -117,7 +133,8 @@ private struct RecordingHotKeyRow: View {
     let modifiers: Modifiers
     let key: Key?
     let canRemove: Bool
-    let onTap: () -> Void
+    let onStartEditing: () -> Void
+    let onCancelEditing: () -> Void
     let onRemove: () -> Void
     let onSelectModifierSide: (Modifier.Kind, Modifier.Side) -> Void
 
@@ -127,13 +144,6 @@ private struct RecordingHotKeyRow: View {
                 Text(title)
                     .settingsCaption()
                 Spacer()
-                if canRemove {
-                    Button(role: .destructive, action: onRemove) {
-                        Image(systemName: "minus.circle")
-                    }
-                    .buttonStyle(.plain)
-                    .help("Remove hotkey")
-                }
             }
 
             HStack {
@@ -143,8 +153,25 @@ private struct RecordingHotKeyRow: View {
                     .animation(.spring(), value: modifiers)
                 Spacer()
             }
-            .contentShape(Rectangle())
-            .onTapGesture(perform: onTap)
+
+            if isActive {
+                Text("Press a new shortcut. Press Esc to cancel.")
+                    .settingsCaption()
+
+                Button("Cancel", action: onCancelEditing)
+                    .buttonStyle(.borderless)
+                    .font(.caption)
+            } else {
+                HStack(spacing: 12) {
+                    Button("Change shortcut", action: onStartEditing)
+                        .buttonStyle(.borderless)
+                    if canRemove {
+                        Button("Clear shortcut", role: .destructive, action: onRemove)
+                            .buttonStyle(.borderless)
+                    }
+                }
+                .font(.caption)
+            }
 
             if !isActive, hotKey.key == nil, !hotKey.modifiers.isEmpty {
                 ModifierSideControls(

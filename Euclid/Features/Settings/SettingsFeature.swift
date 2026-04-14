@@ -72,8 +72,10 @@ struct SettingsFeature {
     case startSettingRecordingHotKey(Int)
     case addRecordingHotKey
     case removeRecordingHotKey(Int)
+    case cancelSettingRecordingHotKeyCapture
     case completeSettingHotKeyCapture
     case startSettingPasteLastTranscriptHotkey
+    case cancelSettingPasteLastTranscriptHotkeyCapture
     case completeSettingPasteLastTranscriptHotkeyCapture
     case clearPasteLastTranscriptHotkey
     case keyEvent(KeyEvent)
@@ -245,7 +247,7 @@ struct SettingsFeature {
       return finishCaptureEffect(for: target)
     }
 
-    if target != .pasteLastTranscript, keyEvent.modifiers.isEmpty {
+    if target != .pasteLastTranscript, keyEvent.modifiers.isEmpty, !updatedModifiers.isEmpty {
       applyCapturedHotKey(key: nil, modifiers: updatedModifiers, for: target, state: &state)
       return finishCaptureEffect(for: target)
     }
@@ -437,6 +439,12 @@ struct SettingsFeature {
         }
         return .none
 
+      case .cancelSettingRecordingHotKeyCapture:
+        if let target = recordingCaptureTarget(for: state) {
+          endCapture(target, state: &state)
+        }
+        return .none
+
       case .completeSettingHotKeyCapture:
         settingsLogger.info("Finished recording hotkey capture")
         if let target = recordingCaptureTarget(for: state) {
@@ -508,6 +516,10 @@ struct SettingsFeature {
       case .startSettingPasteLastTranscriptHotkey:
         settingsLogger.info("Starting paste-last hotkey capture")
         beginCapture(.pasteLastTranscript, state: &state)
+        return .none
+
+      case .cancelSettingPasteLastTranscriptHotkeyCapture:
+        endCapture(.pasteLastTranscript, state: &state)
         return .none
 
       case .completeSettingPasteLastTranscriptHotkeyCapture:

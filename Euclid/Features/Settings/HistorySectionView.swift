@@ -72,6 +72,8 @@ private struct PasteLastTranscriptHotkeyRow: View {
 
 	var body: some View {
 		let pasteHotkey = store.euclidSettings.pasteLastTranscriptHotkey
+		let isShowingCapturedModifiers =
+			store.isSettingPasteLastTranscriptHotkey && !store.currentPasteLastModifiers.isEmpty
 
 		VStack(alignment: .leading, spacing: 12) {
 			Label {
@@ -85,8 +87,10 @@ private struct PasteLastTranscriptHotkeyRow: View {
 				Image(systemName: "doc.on.clipboard")
 			}
 
-			let key = store.isSettingPasteLastTranscriptHotkey ? nil : pasteHotkey?.key
-			let modifiers = store.isSettingPasteLastTranscriptHotkey ? store.currentPasteLastModifiers : (pasteHotkey?.modifiers ?? .init(modifiers: []))
+			let key = isShowingCapturedModifiers ? nil : pasteHotkey?.key
+			let modifiers = isShowingCapturedModifiers
+				? store.currentPasteLastModifiers
+				: (pasteHotkey?.modifiers ?? .init(modifiers: []))
 
 			HStack {
 				Spacer()
@@ -98,25 +102,33 @@ private struct PasteLastTranscriptHotkeyRow: View {
 							.settingsCaption()
 					}
 				}
-				.contentShape(Rectangle())
-				.onTapGesture {
-					store.send(.startSettingPasteLastTranscriptHotkey)
-				}
 				Spacer()
 			}
 
 			if store.isSettingPasteLastTranscriptHotkey {
-				Text("Use at least one modifier (⌘, ⌥, ⇧, ⌃) plus a key.")
+				Text("Press a new shortcut. Use at least one modifier (⌘, ⌥, ⇧, ⌃) plus a key. Press Esc to cancel.")
 					.settingsCaption()
-			} else if pasteHotkey != nil {
-				Button {
-					store.send(.clearPasteLastTranscriptHotkey)
-				} label: {
-					Label("Clear shortcut", systemImage: "xmark.circle")
+				Button("Cancel") {
+					store.send(.cancelSettingPasteLastTranscriptHotkeyCapture)
 				}
 				.buttonStyle(.borderless)
 				.font(.caption)
-				.foregroundStyle(.secondary)
+			} else {
+				HStack(spacing: 12) {
+					Button("Change shortcut") {
+						store.send(.startSettingPasteLastTranscriptHotkey)
+					}
+					.buttonStyle(.borderless)
+
+					if pasteHotkey != nil {
+						Button("Clear shortcut") {
+							store.send(.clearPasteLastTranscriptHotkey)
+						}
+						.buttonStyle(.borderless)
+						.foregroundStyle(.secondary)
+					}
+				}
+				.font(.caption)
 			}
 		}
 		.enableInjection()
